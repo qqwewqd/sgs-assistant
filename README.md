@@ -41,7 +41,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-lan.ps1
 
 构建要求：
 
-- Java 17
+- Java 17+
 - Maven
 - Node.js 18+
 - Windows 自带或 .NET Framework 提供的 `csc.exe`
