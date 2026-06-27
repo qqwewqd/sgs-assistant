@@ -1,0 +1,212 @@
+:root {
+  --warm-bg: #fff7ed;
+  --warm-panel: #fffbf3;
+  --warm-card: #fff1dc;
+  --warm-line: #edd3ad;
+  --warm-text: #442716;
+  --warm-muted: #8b684f;
+  --warm-primary: #c46a2d;
+  --warm-primary-strong: #a84e1d;
+  --warm-accent: #e6a13b;
+  --warm-danger: #c94b35;
+  --warm-success: #4f8d5a;
+  color: var(--warm-text);
+  background: var(--warm-bg);
+  font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--warm-bg);
+  color: var(--warm-text);
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+.page {
+  min-height: 100vh;
+  background:
+    linear-gradient(180deg, rgba(255, 246, 230, 0.96), rgba(255, 250, 242, 0.98)),
+    radial-gradient(circle at top left, rgba(230, 161, 59, 0.24), transparent 30%);
+}
+
+.mobile-shell {
+  min-height: 100vh;
+  max-width: 540px;
+  margin: 0 auto;
+  padding: 16px 14px 92px;
+}
+
+.panel {
+  background: var(--warm-panel);
+  border: 1px solid var(--warm-line);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(135, 86, 39, 0.12);
+}
+
+.section-title {
+  margin: 0 0 12px;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.muted {
+  color: var(--warm-muted);
+}
+
+.warm-button {
+  border: 0;
+  border-radius: 8px;
+  background: var(--warm-primary);
+  color: #fffaf3;
+  min-height: 46px;
+  padding: 0 16px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.warm-button.secondary {
+  background: #f2d6ac;
+  color: var(--warm-text);
+}
+
+.warm-button.danger {
+  background: var(--warm-danger);
+}
+
+.warm-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.field {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid var(--warm-line);
+  border-radius: 8px;
+  padding: 0 14px;
+  background: #fffdf8;
+  color: var(--warm-text);
+  outline: none;
+}
+
+.field:focus {
+  border-color: var(--warm-primary);
+  box-shadow: 0 0 0 3px rgba(196, 106, 45, 0.18);
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.general-card {
+  overflow: hidden;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background: #fffaf1;
+  cursor: pointer;
+}
+
+.general-card.selected {
+  border-color: var(--warm-primary);
+}
+
+.general-card img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 4.2;
+  object-fit: cover;
+  background: #f5dfbd;
+}
+
+.general-card strong {
+  display: block;
+  padding: 8px;
+  font-size: 15px;
+  line-height: 1.25;
+}
+
+.fixed-bottom {
+  position: fixed;
+  left: 50%;
+  bottom: 0;
+  width: min(540px, 100%);
+  transform: translateX(-50%);
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+  background: rgba(255, 247, 237, 0.96);
+  border-top: 1px solid var(--warm-line);
+  backdrop-filter: blur(12px);
+}
+
+.fixed-bottom .warm-button {
+  width: 100%;
+}
+
+.identity-card {
+  display: grid;
+  place-items: center;
+  min-height: 104px;
+  border: 1px dashed #d9ae75;
+  border-radius: 8px;
+  background: repeating-linear-gradient(45deg, #fff3df, #fff3df 10px, #ffe8c4 10px, #ffe8c4 20px);
+  font-weight: 900;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+.identity-card.revealed {
+  background: #fffaf2;
+  color: var(--warm-primary-strong);
+  font-size: 28px;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: #f4dec0;
+  color: var(--warm-text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.status-pill.green {
+  background: #dfefd8;
+  color: #2f6b38;
+}
+
+.status-pill.red {
+  background: #f4d2c9;
+  color: #923622;
+}
+
+.el-button--primary {
+  --el-button-bg-color: var(--warm-primary);
+  --el-button-border-color: var(--warm-primary);
+  --el-button-hover-bg-color: var(--warm-primary-strong);
+  --el-button-hover-border-color: var(--warm-primary-strong);
+}
+
+.el-table {
+  --el-table-header-bg-color: #fff0d9;
+  --el-table-tr-bg-color: #fffaf2;
+}

@@ -1,0 +1,49 @@
+spring:
+  application:
+    name: sanguosha-assistant
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+  datasource:
+    url: ${SGS_DB_URL:jdbc:h2:file:./data/sgs;MODE=MySQL;DATABASE_TO_LOWER=TRUE;CASE_INSENSITIVE_IDENTIFIERS=TRUE}
+    username: ${SGS_DB_USERNAME:sa}
+    password: ${SGS_DB_PASSWORD:}
+    driver-class-name: org.h2.Driver
+  servlet:
+    multipart:
+      max-file-size: 1MB
+      max-request-size: 2MB
+  sql:
+    init:
+      mode: ${SGS_SQL_INIT_MODE:always}
+      encoding: UTF-8
+      schema-locations: classpath:schema-h2.sql
+      continue-on-error: true
+
+server:
+  port: ${SGS_SERVER_PORT:8080}
+  forward-headers-strategy: framework
+
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  global-config:
+    db-config:
+      id-type: auto
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+  configuration:
+    map-underscore-to-camel-case: true
+
+sgs:
+  jwt:
+    secret: ${SGS_JWT_SECRET:change-this-secret-before-production}
+    expire-hours: ${SGS_JWT_EXPIRE_HOURS:720}
+  cors:
+    allowed-origin-patterns: ${SGS_CORS_ALLOWED_ORIGINS:http://localhost:*,http://127.0.0.1:*,http://192.168.*:*,http://10.*:*,http://172.16.*:*,http://172.17.*:*,http://172.18.*:*,http://172.19.*:*,http://172.20.*:*,http://172.21.*:*,http://172.22.*:*,http://172.23.*:*,http://172.24.*:*,http://172.25.*:*,http://172.26.*:*,http://172.27.*:*,http://172.28.*:*,http://172.29.*:*,http://172.30.*:*,http://172.31.*:*}
+  upload:
+    dir: ${SGS_UPLOAD_DIR:./upload}
+  room:
+    ttl-hours: ${SGS_ROOM_TTL_HOURS:6}
+  bootstrap:
+    enabled: ${SGS_BOOTSTRAP_ENABLED:true}
+    key: ${SGS_BOOTSTRAP_KEY:123}

@@ -1,0 +1,11 @@
+source/backend/target/
+source/backend/src/main/resources/static/
+source/frontend/node_modules/
+source/frontend/dist/
+source/data/
+source/logs/
+source/upload/general/*
+*.log
+.env
+.idea/
+.vscode/

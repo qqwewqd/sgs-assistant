@@ -1,0 +1,17 @@
+import request from '../utils/request'
+
+export const createRoom = () => request.post('/rooms')
+export const joinRoom = (roomCode) => request.post(`/rooms/${roomCode}/join`)
+export const getRoom = (roomCode) => request.get(`/rooms/${roomCode}`)
+export const startGame = (roomCode) => request.post(`/rooms/${roomCode}/start`)
+export const chooseGeneral = (roomCode, generalId) => request.post(`/rooms/${roomCode}/choose`, { generalId })
+export const lockGeneral = (roomCode) => request.post(`/rooms/${roomCode}/lock`)
+export const revealGeneral = (roomCode) => request.post(`/rooms/${roomCode}/reveal-general`)
+export const drawExtraGeneral = (roomCode, faction) => request.post(`/rooms/${roomCode}/extra-generals/draw`, { faction })
+export const revealExtraGeneral = (roomCode, index) => request.post(`/rooms/${roomCode}/extra-generals/${index}/reveal`)
+export const removeExtraGeneral = (roomCode, index) => request.delete(`/rooms/${roomCode}/extra-generals/${index}`)
+export const markDead = (roomCode, targetUserId) => request.post(`/rooms/${roomCode}/dead`, { targetUserId })
+export const restartRoom = (roomCode) => request.post(`/rooms/${roomCode}/restart`)
+export const leaveRoom = (roomCode) => request.post(`/rooms/${roomCode}/leave`)
+export const dissolveRoom = (roomCode) => request.delete(`/rooms/${roomCode}`)
+export const safeLordGenerals = (roomCode, keyword) => request.get(`/rooms/${roomCode}/lord-generals`, { params: { keyword } })
