@@ -315,9 +315,9 @@ import {
 import { useRoomSocket } from '../../composables/useWebSocket'
 import { useGameStore } from '../../store/game'
 import { assetUrl } from '../../utils/pathHelper'
-import hpFullIcon from '../../../../../勾玉.png'
-import hpEmptyIcon from '../../../../../勾玉空.png'
-import armorIcon from '../../../../../护甲.png'
+import hpFullIcon from '../../assets/vitals/勾玉.png'
+import hpEmptyIcon from '../../assets/vitals/勾玉空.png'
+import armorIcon from '../../assets/vitals/护甲.png'
 
 const factionOptions = [
   { label: '不限势力', value: '' },
@@ -345,10 +345,10 @@ const statusBusy = ref(false)
 const markerPanelOpen = ref(false)
 const modalImage = ref(null)
 const dissolving = ref(false)
-const randomPlayerCount = ref(1)
-const randomRangeStart = ref(2)
-const randomRangeEnd = ref(8)
-const randomRangeCount = ref(2)
+const randomPlayerCount = ref(null)
+const randomRangeStart = ref(null)
+const randomRangeEnd = ref(null)
+const randomRangeCount = ref(null)
 const randomResult = ref('')
 const vitalsForm = reactive({
   currentHp: null,
