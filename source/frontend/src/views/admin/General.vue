@@ -40,6 +40,11 @@
           <el-tag :type="row.startsHidden ? 'danger' : 'info'">{{ row.startsHidden ? '是' : '否' }}</el-tag>
         </template>
       </el-table-column>
+      <el-table-column label="血甲" width="150">
+        <template #default="{ row }">
+          <span class="vitals-cell">{{ generalVitalsText(row) }}</span>
+        </template>
+      </el-table-column>
       <el-table-column label="操作" width="170" fixed="right">
         <template #default="{ row }">
           <el-button size="small" @click="openEdit(row)">编辑</el-button>
@@ -80,6 +85,16 @@
         <el-form-item label="暗置将">
           <el-switch v-model="form.startsHidden" />
         </el-form-item>
+        <el-form-item label="血量">
+          <div class="vitals-input-row">
+            <el-input-number v-model="form.initialHp" :min="0" :max="99" controls-position="right" placeholder="初始" />
+            <span>/</span>
+            <el-input-number v-model="form.maxHp" :min="1" :max="99" controls-position="right" placeholder="上限" />
+          </div>
+        </el-form-item>
+        <el-form-item label="护甲">
+          <el-input-number v-model="form.initialArmor" :min="0" :max="99" controls-position="right" placeholder="初始护甲" />
+        </el-form-item>
         <el-form-item label="图片">
           <el-upload
             :key="uploadKey"
@@ -114,6 +129,7 @@ import {
   ElForm,
   ElFormItem,
   ElInput,
+  ElInputNumber,
   ElMessage,
   ElMessageBox,
   ElOption,
@@ -159,6 +175,9 @@ const form = reactive({
   faction: '',
   isLord: false,
   startsHidden: false,
+  initialHp: null,
+  maxHp: null,
+  initialArmor: null,
   file: null
 })
 const MAX_UPLOAD_BYTES = 1024 * 1024
@@ -205,7 +224,7 @@ function handleSizeChange() {
 }
 
 function openCreate() {
-  Object.assign(form, { id: null, name: '', imageName: '', faction: '', isLord: false, startsHidden: false, file: null })
+  Object.assign(form, emptyForm())
   compressionJob += 1
   compressing.value = false
   uploadKey.value += 1
@@ -220,6 +239,9 @@ function openEdit(row) {
     faction: normalizeFactionValue(row.faction),
     isLord: row.isLord,
     startsHidden: row.startsHidden,
+    initialHp: row.initialHp ?? null,
+    maxHp: row.maxHp ?? null,
+    initialArmor: row.initialArmor ?? null,
     file: null
   })
   compressionJob += 1
@@ -280,12 +302,17 @@ async function save() {
     ElMessage.warning('请选择图片')
     return
   }
+  if (!validateFormVitals()) return
   const data = new FormData()
   data.append('name', form.name.trim())
   if (form.imageName.trim()) data.append('imageName', form.imageName.trim())
   data.append('faction', form.faction || '')
   data.append('isLord', String(form.isLord))
   data.append('startsHidden', String(form.startsHidden))
+  data.append('initialHp', form.initialHp ?? '')
+  data.append('maxHp', form.maxHp ?? '')
+  data.append('initialArmor', form.initialArmor ?? '')
+  data.append('maxArmor', '')
   if (form.file) data.append('image', form.file)
   const editing = Boolean(form.id)
   if (editing) await updateGeneral(form.id, data)
@@ -314,6 +341,43 @@ function normalizeFactionValue(value) {
 
 function factionLabel(value) {
   return factionOptions.find((option) => option.value === value)?.label || '无'
+}
+
+function emptyForm() {
+  return {
+    id: null,
+    name: '',
+    imageName: '',
+    faction: '',
+    isLord: false,
+    startsHidden: false,
+    initialHp: null,
+    maxHp: null,
+    initialArmor: null,
+    file: null
+  }
+}
+
+function validateFormVitals() {
+  const values = [form.initialHp, form.maxHp, form.initialArmor]
+  const allBlank = values.every((value) => value === null || value === undefined || value === '')
+  if (allBlank) return true
+  if (values.some((value) => value === null || value === undefined || value === '')) {
+    ElMessage.warning('血量初始值、血量上限和初始护甲需要全部填写，或全部留空')
+    return false
+  }
+  if (form.initialHp > form.maxHp) {
+    ElMessage.warning('初始血量不能超过血量上限')
+    return false
+  }
+  return true
+}
+
+function generalVitalsText(row) {
+  if ([row.initialHp, row.maxHp, row.initialArmor].some((value) => value === null || value === undefined)) {
+    return '未配置'
+  }
+  return `血 ${row.initialHp}/${row.maxHp} · 甲 ${row.initialArmor}`
 }
 
 function syncImageNameWithFile(filename) {
@@ -476,6 +540,24 @@ function formatFileSize(size) {
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.vitals-cell {
+  color: #6b5a47;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.vitals-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+}
+
+.vitals-input-row .el-input-number {
+  width: 100%;
 }
 
 .preview-box {

@@ -12,9 +12,11 @@ public interface GeneralService {
 
     List<RoomView.GeneralCard> listLordCards(String keyword);
 
-    GeneralVO createGeneral(String name, String faction, Boolean isLord, Boolean startsHidden, String imageName, MultipartFile image);
+    GeneralVO createGeneral(String name, String faction, Boolean isLord, Boolean startsHidden, String initialHp, String maxHp, String initialArmor, String maxArmor, String imageName, MultipartFile image);
 
-    GeneralVO updateGeneral(Long id, String name, String faction, Boolean isLord, Boolean startsHidden, String imageName, MultipartFile image);
+    GeneralVO updateGeneral(Long id, String name, String faction, Boolean isLord, Boolean startsHidden, String initialHp, String maxHp, String initialArmor, String maxArmor, String imageName, MultipartFile image);
+
+    GeneralVO updateGeneralVitals(Long id, Integer initialHp, Integer maxHp, Integer initialArmor);
 
     void deleteGeneral(Long id);
 

@@ -17,8 +17,15 @@ public class PlayerState {
     private boolean locked;
     private boolean dead;
     private boolean generalRevealed;
+    private boolean chained;
+    private boolean turnedOver;
     private String identity;
+    private Integer currentHp;
+    private Integer maxHp;
+    private Integer currentArmor;
+    private Integer maxArmor;
     private RoomView.GeneralCard selectedGeneral;
+    private List<RoomView.MarkerView> markers = new ArrayList<>();
     private List<RoomView.ExtraGeneralCard> extraGenerals = new ArrayList<>();
     private List<RoomView.GeneralCard> generalPool = new ArrayList<>();
     private Instant joinedAt = Instant.now();

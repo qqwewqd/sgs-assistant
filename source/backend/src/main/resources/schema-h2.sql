@@ -14,9 +14,18 @@ CREATE TABLE IF NOT EXISTS generals (
     faction VARCHAR(20),
     is_lord BOOLEAN NOT NULL DEFAULT FALSE,
     starts_hidden BOOLEAN NOT NULL DEFAULT FALSE,
+    initial_hp INT,
+    max_hp INT,
+    initial_armor INT,
+    max_armor INT,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_generals_name ON generals (name);
 CREATE UNIQUE INDEX IF NOT EXISTS uk_generals_image_path ON generals (image_path);
+
+ALTER TABLE generals ADD COLUMN IF NOT EXISTS initial_hp INT;
+ALTER TABLE generals ADD COLUMN IF NOT EXISTS max_hp INT;
+ALTER TABLE generals ADD COLUMN IF NOT EXISTS initial_armor INT;
+ALTER TABLE generals ADD COLUMN IF NOT EXISTS max_armor INT;

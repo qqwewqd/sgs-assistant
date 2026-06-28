@@ -1,10 +1,16 @@
 source/backend/target/
 source/backend/src/main/resources/static/
+source/backend/data/
+source/backend/upload/
+source/backend/seed-assets/
+source/backend/.idea/
 source/frontend/node_modules/
 source/frontend/dist/
+source/SGS-LAN.exe
 source/data/
 source/logs/
 source/upload/general/*
+releases/*.zip
 *.log
 .env
 .idea/

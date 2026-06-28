@@ -16,6 +16,10 @@ public class General {
     private String faction;
     private Boolean isLord;
     private Boolean startsHidden;
+    private Integer initialHp;
+    private Integer maxHp;
+    private Integer initialArmor;
+    private Integer maxArmor;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

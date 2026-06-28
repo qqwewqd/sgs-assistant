@@ -75,10 +75,14 @@ public class AdminController {
             @RequestParam(required = false) String faction,
             @RequestParam(defaultValue = "false") Boolean isLord,
             @RequestParam(defaultValue = "false") Boolean startsHidden,
+            @RequestParam(required = false) String initialHp,
+            @RequestParam(required = false) String maxHp,
+            @RequestParam(required = false) String initialArmor,
+            @RequestParam(required = false) String maxArmor,
             @RequestParam(required = false) String imageName,
             @RequestPart MultipartFile image
     ) {
-        return Result.success(generalService.createGeneral(name, faction, isLord, startsHidden, imageName, image));
+        return Result.success(generalService.createGeneral(name, faction, isLord, startsHidden, initialHp, maxHp, initialArmor, maxArmor, imageName, image));
     }
 
     @PutMapping(value = "/generals/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -88,10 +92,14 @@ public class AdminController {
             @RequestParam(required = false) String faction,
             @RequestParam(required = false) Boolean isLord,
             @RequestParam(required = false) Boolean startsHidden,
+            @RequestParam(required = false) String initialHp,
+            @RequestParam(required = false) String maxHp,
+            @RequestParam(required = false) String initialArmor,
+            @RequestParam(required = false) String maxArmor,
             @RequestParam(required = false) String imageName,
             @RequestPart(required = false) MultipartFile image
     ) {
-        return Result.success(generalService.updateGeneral(id, name, faction, isLord, startsHidden, imageName, image));
+        return Result.success(generalService.updateGeneral(id, name, faction, isLord, startsHidden, initialHp, maxHp, initialArmor, maxArmor, imageName, image));
     }
 
     @DeleteMapping("/generals/{id}")

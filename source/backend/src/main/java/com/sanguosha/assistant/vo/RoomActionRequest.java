@@ -7,4 +7,12 @@ public class RoomActionRequest {
     private Long generalId;
     private Long targetUserId;
     private String faction;
+    private Integer currentHp;
+    private Integer maxHp;
+    private Integer currentArmor;
+    private Integer maxArmor;
+    private String markerName;
+    private Integer markerCount;
+    private Boolean chained;
+    private Boolean turnedOver;
 }

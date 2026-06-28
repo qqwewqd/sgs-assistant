@@ -16,6 +16,10 @@ public class GeneralVO {
     private String faction;
     private Boolean isLord;
     private Boolean startsHidden;
+    private Integer initialHp;
+    private Integer maxHp;
+    private Integer initialArmor;
+    private Integer maxArmor;
     private LocalDateTime createdAt;
 
     public static GeneralVO from(General general) {
@@ -26,6 +30,10 @@ public class GeneralVO {
                 general.getFaction(),
                 general.getIsLord(),
                 general.getStartsHidden(),
+                general.getInitialHp(),
+                general.getMaxHp(),
+                general.getInitialArmor(),
+                general.getMaxArmor(),
                 general.getCreatedAt()
         );
     }

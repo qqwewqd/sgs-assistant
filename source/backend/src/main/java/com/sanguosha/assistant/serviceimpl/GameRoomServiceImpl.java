@@ -105,6 +105,9 @@ public class GameRoomServiceImpl implements GameRoomService {
             player.setLocked(false);
             player.setDead(false);
             player.setGeneralRevealed(false);
+            clearVitals(player);
+            clearMarkers(player);
+            clearCardStatus(player);
             player.setSelectedGeneral(null);
             player.setExtraGenerals(new ArrayList<>());
             player.setGeneralPool(new ArrayList<>(generals.subList(i * 6, i * 6 + 6).stream().map(this::toCard).toList()));
@@ -141,6 +144,7 @@ public class GameRoomServiceImpl implements GameRoomService {
         }
         player.setSelectedGeneral(selected);
         player.setGeneralRevealed(false);
+        applyConfiguredVitals(player, selected);
         saveRoom(room, true);
         return toView(room, user.getId());
     }
@@ -155,6 +159,7 @@ public class GameRoomServiceImpl implements GameRoomService {
         if (player.getSelectedGeneral() == null) {
             throw new AppException("请先选择出阵武将");
         }
+        applyConfiguredVitals(player, player.getSelectedGeneral());
         player.setLocked(true);
         player.setGeneralRevealed(!startsHidden(player.getSelectedGeneral()));
         if (room.getPlayers().stream().allMatch(PlayerState::isLocked)) {
@@ -245,6 +250,77 @@ public class GameRoomServiceImpl implements GameRoomService {
     }
 
     @Override
+    public synchronized RoomView updateVitals(String roomCode, Integer currentHp, Integer maxHp, Integer currentArmor, Integer maxArmor, AuthUser user) {
+        RoomState room = requireRoom(roomCode);
+        PlayerState player = requirePlayer(room, user.getId());
+        if (!RoomState.PLAYING.equals(room.getStatus())) {
+            throw new AppException("当前不是对局阶段");
+        }
+        if (player.getSelectedGeneral() == null) {
+            throw new AppException("请先选择出阵武将");
+        }
+        validateVitals(currentHp, maxHp, currentArmor, maxArmor);
+        boolean shouldPersistTemplate = !hasVitals(player) && !hasConfiguredVitals(player.getSelectedGeneral());
+        if (shouldPersistTemplate) {
+            generalService.updateGeneralVitals(player.getSelectedGeneral().getId(), currentHp, maxHp, currentArmor);
+            applyVitalsToSelectedGeneral(player, currentHp, maxHp, currentArmor);
+        }
+        player.setCurrentHp(currentHp);
+        player.setMaxHp(maxHp);
+        player.setCurrentArmor(currentArmor);
+        player.setMaxArmor(null);
+        saveRoom(room, true);
+        return toView(room, user.getId());
+    }
+
+    @Override
+    public synchronized RoomView updateMarker(String roomCode, Long targetUserId, String markerName, Integer markerCount, AuthUser user) {
+        RoomState room = requireRoom(roomCode);
+        requirePlayer(room, user.getId());
+        if (!RoomState.PLAYING.equals(room.getStatus())) {
+            throw new AppException("当前不是对局阶段");
+        }
+        PlayerState target = requirePlayer(room, targetUserId);
+        String normalizedName = normalizeMarkerName(markerName);
+        int normalizedCount = normalizeMarkerCount(markerCount);
+        if (target.getMarkers() == null) {
+            target.setMarkers(new ArrayList<>());
+        }
+        RoomView.MarkerView marker = findMarker(target.getMarkers(), normalizedName);
+        if (normalizedCount == 0) {
+            if (marker != null) {
+                target.getMarkers().remove(marker);
+            }
+        } else if (marker == null) {
+            marker = new RoomView.MarkerView();
+            marker.setName(normalizedName);
+            marker.setCount(normalizedCount);
+            target.getMarkers().add(marker);
+        } else {
+            marker.setCount(normalizedCount);
+        }
+        saveRoom(room, true);
+        return toView(room, user.getId());
+    }
+
+    @Override
+    public synchronized RoomView updateOwnStatus(String roomCode, Boolean chained, Boolean turnedOver, AuthUser user) {
+        RoomState room = requireRoom(roomCode);
+        PlayerState player = requirePlayer(room, user.getId());
+        if (!RoomState.PLAYING.equals(room.getStatus())) {
+            throw new AppException("当前不是对局阶段");
+        }
+        if (chained != null) {
+            player.setChained(chained);
+        }
+        if (turnedOver != null) {
+            player.setTurnedOver(turnedOver);
+        }
+        saveRoom(room, true);
+        return toView(room, user.getId());
+    }
+
+    @Override
     public synchronized RoomView restart(String roomCode, AuthUser user) {
         RoomState room = requireRoom(roomCode);
         ensureOwner(room, user);
@@ -253,6 +329,9 @@ public class GameRoomServiceImpl implements GameRoomService {
             player.setLocked(false);
             player.setDead(false);
             player.setGeneralRevealed(false);
+            clearVitals(player);
+            clearMarkers(player);
+            clearCardStatus(player);
             player.setSelectedGeneral(null);
             player.setExtraGenerals(new ArrayList<>());
             player.setGeneralPool(new ArrayList<>());
@@ -399,6 +478,108 @@ public class GameRoomServiceImpl implements GameRoomService {
         return room.getPlayers().stream().allMatch(PlayerState::isOnline);
     }
 
+    private void applyConfiguredVitals(PlayerState player, RoomView.GeneralCard selected) {
+        if (selected == null || !hasConfiguredVitals(selected)) {
+            clearVitals(player);
+            return;
+        }
+        player.setCurrentHp(selected.getInitialHp());
+        player.setMaxHp(selected.getMaxHp());
+        player.setCurrentArmor(selected.getInitialArmor());
+        player.setMaxArmor(null);
+    }
+
+    private boolean hasConfiguredVitals(RoomView.GeneralCard card) {
+        return card.getInitialHp() != null
+                && card.getMaxHp() != null
+                && card.getInitialArmor() != null;
+    }
+
+    private boolean hasVitals(PlayerState player) {
+        return player.getCurrentHp() != null
+                && player.getMaxHp() != null
+                && player.getCurrentArmor() != null;
+    }
+
+    private void applyVitalsToSelectedGeneral(PlayerState player, Integer initialHp, Integer maxHp, Integer initialArmor) {
+        RoomView.GeneralCard selected = player.getSelectedGeneral();
+        if (selected == null) {
+            return;
+        }
+        applyVitalsToCard(selected, initialHp, maxHp, initialArmor);
+        for (RoomView.GeneralCard card : player.getGeneralPool()) {
+            if (selected.getId().equals(card.getId())) {
+                applyVitalsToCard(card, initialHp, maxHp, initialArmor);
+            }
+        }
+    }
+
+    private void applyVitalsToCard(RoomView.GeneralCard card, Integer initialHp, Integer maxHp, Integer initialArmor) {
+        card.setInitialHp(initialHp);
+        card.setMaxHp(maxHp);
+        card.setInitialArmor(initialArmor);
+        card.setMaxArmor(null);
+    }
+
+    private void clearVitals(PlayerState player) {
+        player.setCurrentHp(null);
+        player.setMaxHp(null);
+        player.setCurrentArmor(null);
+        player.setMaxArmor(null);
+    }
+
+    private void clearMarkers(PlayerState player) {
+        player.setMarkers(new ArrayList<>());
+    }
+
+    private void clearCardStatus(PlayerState player) {
+        player.setChained(false);
+        player.setTurnedOver(false);
+    }
+
+    private void validateVitals(Integer currentHp, Integer maxHp, Integer currentArmor, Integer maxArmor) {
+        if (currentHp == null || maxHp == null || currentArmor == null) {
+            throw new AppException("请填写血量和护甲");
+        }
+        if (maxHp < 1 || maxHp > 99) {
+            throw new AppException("血量上限需在 1-99 之间");
+        }
+        if (currentHp < 0 || currentHp > maxHp) {
+            throw new AppException("当前血量需在 0 到血量上限之间");
+        }
+        if (currentArmor < 0 || currentArmor > 99) {
+            throw new AppException("当前护甲需在 0-99 之间");
+        }
+    }
+
+    private String normalizeMarkerName(String markerName) {
+        if (markerName == null || markerName.trim().isBlank()) {
+            throw new AppException("请填写标记名称");
+        }
+        String normalized = markerName.trim();
+        if (normalized.length() > 12) {
+            throw new AppException("标记名称最多 12 个字");
+        }
+        return normalized;
+    }
+
+    private int normalizeMarkerCount(Integer markerCount) {
+        if (markerCount == null) {
+            throw new AppException("请填写标记数量");
+        }
+        if (markerCount < 0 || markerCount > 999) {
+            throw new AppException("标记数量需在 0-999 之间");
+        }
+        return markerCount;
+    }
+
+    private RoomView.MarkerView findMarker(List<RoomView.MarkerView> markers, String name) {
+        return markers.stream()
+                .filter(marker -> marker.getName().equals(name))
+                .findFirst()
+                .orElse(null);
+    }
+
     private List<String> identities(int playerCount) {
         return switch (playerCount) {
             case 2 -> List.of("主公", "反贼");
@@ -422,6 +603,10 @@ public class GameRoomServiceImpl implements GameRoomService {
         card.setFaction(general.getFaction());
         card.setIsLord(general.getIsLord());
         card.setStartsHidden(general.getStartsHidden());
+        card.setInitialHp(general.getInitialHp());
+        card.setMaxHp(general.getMaxHp());
+        card.setInitialArmor(general.getInitialArmor());
+        card.setMaxArmor(general.getMaxArmor());
         return card;
     }
 
@@ -431,6 +616,10 @@ public class GameRoomServiceImpl implements GameRoomService {
         card.setName(general.getName());
         card.setImagePath(general.getImagePath());
         card.setFaction(general.getFaction());
+        card.setInitialHp(general.getInitialHp());
+        card.setMaxHp(general.getMaxHp());
+        card.setInitialArmor(general.getInitialArmor());
+        card.setMaxArmor(general.getMaxArmor());
         card.setRevealed(revealed);
         return card;
     }
@@ -446,6 +635,10 @@ public class GameRoomServiceImpl implements GameRoomService {
         card.setFaction(source.getFaction());
         card.setIsLord(source.getIsLord());
         card.setStartsHidden(source.getStartsHidden());
+        card.setInitialHp(source.getInitialHp());
+        card.setMaxHp(source.getMaxHp());
+        card.setInitialArmor(source.getInitialArmor());
+        card.setMaxArmor(source.getMaxArmor());
         return card;
     }
 
@@ -458,8 +651,19 @@ public class GameRoomServiceImpl implements GameRoomService {
         card.setName(visible ? source.getName() : null);
         card.setImagePath(visible ? source.getImagePath() : null);
         card.setFaction(visible ? source.getFaction() : null);
+        card.setInitialHp(visible ? source.getInitialHp() : null);
+        card.setMaxHp(visible ? source.getMaxHp() : null);
+        card.setInitialArmor(visible ? source.getInitialArmor() : null);
+        card.setMaxArmor(visible ? source.getMaxArmor() : null);
         card.setRevealed(source.isRevealed());
         return card;
+    }
+
+    private RoomView.MarkerView copyMarker(RoomView.MarkerView source) {
+        RoomView.MarkerView marker = new RoomView.MarkerView();
+        marker.setName(source.getName());
+        marker.setCount(source.getCount());
+        return marker;
     }
 
     private boolean startsHidden(RoomView.GeneralCard card) {
@@ -563,6 +767,16 @@ public class GameRoomServiceImpl implements GameRoomService {
             playerView.setLocked(player.isLocked());
             playerView.setDead(player.isDead());
             playerView.setGeneralRevealed(player.isGeneralRevealed());
+            playerView.setChained(player.isChained());
+            playerView.setTurnedOver(player.isTurnedOver());
+            playerView.setCurrentHp(player.getCurrentHp());
+            playerView.setMaxHp(player.getMaxHp());
+            playerView.setCurrentArmor(player.getCurrentArmor());
+            playerView.setMaxArmor(player.getMaxArmor());
+            if (player.getMarkers() == null) {
+                player.setMarkers(new ArrayList<>());
+            }
+            playerView.setMarkers(player.getMarkers().stream().map(this::copyMarker).toList());
             boolean identityVisible = IDENTITY_LORD.equals(player.getIdentity()) || player.isDead() || player.getUserId().equals(viewerId);
             boolean publicGeneralVisible = player.isLocked()
                     && (IDENTITY_LORD.equals(player.getIdentity()) || RoomState.PLAYING.equals(room.getStatus()))
@@ -590,6 +804,16 @@ public class GameRoomServiceImpl implements GameRoomService {
             me.setLocked(viewer.isLocked());
             me.setDead(viewer.isDead());
             me.setGeneralRevealed(viewer.isGeneralRevealed());
+            me.setChained(viewer.isChained());
+            me.setTurnedOver(viewer.isTurnedOver());
+            me.setCurrentHp(viewer.getCurrentHp());
+            me.setMaxHp(viewer.getMaxHp());
+            me.setCurrentArmor(viewer.getCurrentArmor());
+            me.setMaxArmor(viewer.getMaxArmor());
+            if (viewer.getMarkers() == null) {
+                viewer.setMarkers(new ArrayList<>());
+            }
+            me.setMarkers(viewer.getMarkers().stream().map(this::copyMarker).toList());
             me.setSelectedGeneral(copyCard(viewer.getSelectedGeneral()));
             if (viewer.getExtraGenerals() == null) {
                 viewer.setExtraGenerals(new ArrayList<>());

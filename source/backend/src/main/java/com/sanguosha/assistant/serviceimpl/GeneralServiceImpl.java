@@ -40,6 +40,9 @@ public class GeneralServiceImpl implements GeneralService {
     @Value("${sgs.upload.dir}")
     private String uploadDir;
 
+    private record VitalsConfig(Integer initialHp, Integer maxHp, Integer initialArmor) {
+    }
+
     @Override
     public PageVO<GeneralVO> listGenerals(String keyword, Boolean lordOnly, Integer page, Integer pageSize) {
         String normalizedKeyword = keyword == null ? null : keyword.trim();
@@ -73,11 +76,12 @@ public class GeneralServiceImpl implements GeneralService {
 
     @Override
     @Transactional
-    public GeneralVO createGeneral(String name, String faction, Boolean isLord, Boolean startsHidden, String imageName, MultipartFile image) {
+    public GeneralVO createGeneral(String name, String faction, Boolean isLord, Boolean startsHidden, String initialHp, String maxHp, String initialArmor, String maxArmor, String imageName, MultipartFile image) {
         if (image == null || image.isEmpty()) {
             throw new AppException("请上传武将图片");
         }
         String normalizedName = normalizeName(name);
+        VitalsConfig vitals = normalizeVitalsConfig(initialHp, maxHp, initialArmor, maxArmor);
 
         General general = new General();
         general.setName(normalizedName);
@@ -85,6 +89,7 @@ public class GeneralServiceImpl implements GeneralService {
         general.setImagePath(storeImage(image, imageName, null));
         general.setIsLord(Boolean.TRUE.equals(isLord));
         general.setStartsHidden(Boolean.TRUE.equals(startsHidden));
+        applyVitalsConfig(general, vitals);
         general.setCreatedAt(LocalDateTime.now());
         general.setUpdatedAt(LocalDateTime.now());
         generalMapper.insert(general);
@@ -93,12 +98,13 @@ public class GeneralServiceImpl implements GeneralService {
 
     @Override
     @Transactional
-    public GeneralVO updateGeneral(Long id, String name, String faction, Boolean isLord, Boolean startsHidden, String imageName, MultipartFile image) {
+    public GeneralVO updateGeneral(Long id, String name, String faction, Boolean isLord, Boolean startsHidden, String initialHp, String maxHp, String initialArmor, String maxArmor, String imageName, MultipartFile image) {
         General general = requireGeneral(id);
         if (name != null && !name.trim().isBlank()) {
             String normalizedName = normalizeName(name);
             general.setName(normalizedName);
         }
+        VitalsConfig vitals = normalizeVitalsConfig(initialHp, maxHp, initialArmor, maxArmor);
         if (faction != null) {
             general.setFaction(normalizeFaction(faction));
         }
@@ -108,6 +114,7 @@ public class GeneralServiceImpl implements GeneralService {
         if (startsHidden != null) {
             general.setStartsHidden(startsHidden);
         }
+        applyVitalsConfig(general, vitals);
         if (image != null && !image.isEmpty()) {
             String oldPath = general.getImagePath();
             String newPath = storeImage(image, imageName, oldPath);
@@ -118,6 +125,23 @@ public class GeneralServiceImpl implements GeneralService {
         } else if (imageName != null && !imageName.trim().isBlank()) {
             general.setImagePath(renameStoredImage(general.getImagePath(), imageName));
         }
+        general.setUpdatedAt(LocalDateTime.now());
+        generalMapper.updateById(general);
+        return GeneralVO.from(general);
+    }
+
+    @Override
+    @Transactional
+    public GeneralVO updateGeneralVitals(Long id, Integer initialHp, Integer maxHp, Integer initialArmor) {
+        General general = requireGeneral(id);
+        if (initialHp == null || maxHp == null || initialArmor == null) {
+            throw new AppException("请填写血量和护甲");
+        }
+        validateVitals(initialHp, maxHp, initialArmor);
+        general.setInitialHp(initialHp);
+        general.setMaxHp(maxHp);
+        general.setInitialArmor(initialArmor);
+        general.setMaxArmor(null);
         general.setUpdatedAt(LocalDateTime.now());
         generalMapper.updateById(general);
         return GeneralVO.from(general);
@@ -160,6 +184,56 @@ public class GeneralServiceImpl implements GeneralService {
             return null;
         }
         return faction.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private VitalsConfig normalizeVitalsConfig(String initialHp, String maxHp, String initialArmor, String maxArmor) {
+        Integer normalizedInitialHp = parseOptionalInteger(initialHp, "初始血量");
+        Integer normalizedMaxHp = parseOptionalInteger(maxHp, "血量上限");
+        Integer normalizedInitialArmor = parseOptionalInteger(initialArmor, "初始护甲");
+        boolean allBlank = normalizedInitialHp == null
+                && normalizedMaxHp == null
+                && normalizedInitialArmor == null;
+        if (allBlank) {
+            return new VitalsConfig(null, null, null);
+        }
+        if (normalizedInitialHp == null || normalizedMaxHp == null) {
+            throw new AppException("血量初始值和上限需要同时填写");
+        }
+        if (normalizedInitialArmor == null) {
+            throw new AppException("初始护甲需要填写");
+        }
+        validateVitals(normalizedInitialHp, normalizedMaxHp, normalizedInitialArmor);
+        return new VitalsConfig(normalizedInitialHp, normalizedMaxHp, normalizedInitialArmor);
+    }
+
+    private Integer parseOptionalInteger(String value, String label) {
+        if (value == null || value.trim().isBlank()) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException ex) {
+            throw new AppException(label + "必须是数字");
+        }
+    }
+
+    private void validateVitals(int initialHp, int maxHp, int initialArmor) {
+        if (maxHp < 1 || maxHp > 99) {
+            throw new AppException("血量上限需在 1-99 之间");
+        }
+        if (initialHp < 0 || initialHp > maxHp) {
+            throw new AppException("初始血量需在 0 到血量上限之间");
+        }
+        if (initialArmor < 0 || initialArmor > 99) {
+            throw new AppException("初始护甲需在 0-99 之间");
+        }
+    }
+
+    private void applyVitalsConfig(General general, VitalsConfig vitals) {
+        general.setInitialHp(vitals.initialHp());
+        general.setMaxHp(vitals.maxHp());
+        general.setInitialArmor(vitals.initialArmor());
+        general.setMaxArmor(null);
     }
 
     private long normalizePage(Integer page) {
@@ -362,6 +436,10 @@ public class GeneralServiceImpl implements GeneralService {
         card.setFaction(general.getFaction());
         card.setIsLord(general.getIsLord());
         card.setStartsHidden(general.getStartsHidden());
+        card.setInitialHp(general.getInitialHp());
+        card.setMaxHp(general.getMaxHp());
+        card.setInitialArmor(general.getInitialArmor());
+        card.setMaxArmor(general.getMaxArmor());
         return card;
     }
 }

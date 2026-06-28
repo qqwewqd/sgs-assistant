@@ -27,6 +27,12 @@ public interface GameRoomService {
 
     RoomView markDead(String roomCode, Long targetUserId, AuthUser user);
 
+    RoomView updateVitals(String roomCode, Integer currentHp, Integer maxHp, Integer currentArmor, Integer maxArmor, AuthUser user);
+
+    RoomView updateMarker(String roomCode, Long targetUserId, String markerName, Integer markerCount, AuthUser user);
+
+    RoomView updateOwnStatus(String roomCode, Boolean chained, Boolean turnedOver, AuthUser user);
+
     RoomView restart(String roomCode, AuthUser user);
 
     RoomView leave(String roomCode, AuthUser user);

@@ -26,9 +26,16 @@ public class RoomView {
         private boolean locked;
         private boolean dead;
         private boolean generalRevealed;
+        private boolean chained;
+        private boolean turnedOver;
         private String identity;
+        private Integer currentHp;
+        private Integer maxHp;
+        private Integer currentArmor;
+        private Integer maxArmor;
         private boolean identityVisible;
         private GeneralCard selectedGeneral;
+        private List<MarkerView> markers = new ArrayList<>();
         private List<ExtraGeneralCard> extraGenerals = new ArrayList<>();
         private boolean generalVisible;
     }
@@ -41,7 +48,14 @@ public class RoomView {
         private boolean locked;
         private boolean dead;
         private boolean generalRevealed;
+        private boolean chained;
+        private boolean turnedOver;
+        private Integer currentHp;
+        private Integer maxHp;
+        private Integer currentArmor;
+        private Integer maxArmor;
         private GeneralCard selectedGeneral;
+        private List<MarkerView> markers = new ArrayList<>();
         private List<ExtraGeneralCard> extraGenerals = new ArrayList<>();
         private List<GeneralCard> generalPool = new ArrayList<>();
     }
@@ -54,6 +68,10 @@ public class RoomView {
         private String faction;
         private Boolean isLord;
         private Boolean startsHidden;
+        private Integer initialHp;
+        private Integer maxHp;
+        private Integer initialArmor;
+        private Integer maxArmor;
     }
 
     @Data
@@ -62,6 +80,16 @@ public class RoomView {
         private String name;
         private String imagePath;
         private String faction;
+        private Integer initialHp;
+        private Integer maxHp;
+        private Integer initialArmor;
+        private Integer maxArmor;
         private boolean revealed;
+    }
+
+    @Data
+    public static class MarkerView {
+        private String name;
+        private Integer count;
     }
 }

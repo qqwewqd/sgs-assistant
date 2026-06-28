@@ -79,6 +79,39 @@ public class RoomController {
         return Result.success(gameRoomService.markDead(roomCode, targetUserId, SecurityUtil.currentUser()));
     }
 
+    @PostMapping("/{roomCode}/vitals")
+    public Result<RoomView> updateVitals(@PathVariable String roomCode, @RequestBody RoomActionRequest request) {
+        return Result.success(gameRoomService.updateVitals(
+                roomCode,
+                request.getCurrentHp(),
+                request.getMaxHp(),
+                request.getCurrentArmor(),
+                request.getMaxArmor(),
+                SecurityUtil.currentUser()
+        ));
+    }
+
+    @PostMapping("/{roomCode}/markers")
+    public Result<RoomView> updateMarker(@PathVariable String roomCode, @RequestBody RoomActionRequest request) {
+        return Result.success(gameRoomService.updateMarker(
+                roomCode,
+                request.getTargetUserId(),
+                request.getMarkerName(),
+                request.getMarkerCount(),
+                SecurityUtil.currentUser()
+        ));
+    }
+
+    @PostMapping("/{roomCode}/status")
+    public Result<RoomView> updateOwnStatus(@PathVariable String roomCode, @RequestBody RoomActionRequest request) {
+        return Result.success(gameRoomService.updateOwnStatus(
+                roomCode,
+                request.getChained(),
+                request.getTurnedOver(),
+                SecurityUtil.currentUser()
+        ));
+    }
+
     @PostMapping("/{roomCode}/restart")
     public Result<RoomView> restart(@PathVariable String roomCode) {
         return Result.success(gameRoomService.restart(roomCode, SecurityUtil.currentUser()));
