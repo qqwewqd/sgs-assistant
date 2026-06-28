@@ -260,13 +260,15 @@ public class GameRoomServiceImpl implements GameRoomService {
             throw new AppException("请先选择出阵武将");
         }
         validateVitals(currentHp, maxHp, currentArmor, maxArmor);
-        boolean shouldPersistTemplate = !hasVitals(player) && !hasConfiguredVitals(player.getSelectedGeneral());
+        boolean initializingVitals = !hasVitals(player);
+        boolean shouldPersistTemplate = initializingVitals && !hasConfiguredVitals(player.getSelectedGeneral());
         if (shouldPersistTemplate) {
             generalService.updateGeneralVitals(player.getSelectedGeneral().getId(), currentHp, maxHp, currentArmor);
             applyVitalsToSelectedGeneral(player, currentHp, maxHp, currentArmor);
         }
-        player.setCurrentHp(currentHp);
-        player.setMaxHp(maxHp);
+        int lordBonus = initializingVitals ? lordHpBonus(player) : 0;
+        player.setCurrentHp(currentHp + lordBonus);
+        player.setMaxHp(maxHp + lordBonus);
         player.setCurrentArmor(currentArmor);
         player.setMaxArmor(null);
         saveRoom(room, true);
@@ -483,10 +485,15 @@ public class GameRoomServiceImpl implements GameRoomService {
             clearVitals(player);
             return;
         }
-        player.setCurrentHp(selected.getInitialHp());
-        player.setMaxHp(selected.getMaxHp());
+        int lordBonus = lordHpBonus(player);
+        player.setCurrentHp(selected.getInitialHp() + lordBonus);
+        player.setMaxHp(selected.getMaxHp() + lordBonus);
         player.setCurrentArmor(selected.getInitialArmor());
         player.setMaxArmor(null);
+    }
+
+    private int lordHpBonus(PlayerState player) {
+        return IDENTITY_LORD.equals(player.getIdentity()) ? 1 : 0;
     }
 
     private boolean hasConfiguredVitals(RoomView.GeneralCard card) {
