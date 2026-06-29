@@ -11,6 +11,8 @@ public class AdminRoomVO {
     private String status;
     private Long ownerUserId;
     private String ownerUsername;
+    private Long identityModeId;
+    private String identityModeName;
     private int playerCount;
     private int onlineCount;
     private int offlineCount;

@@ -8,6 +8,7 @@ const Select = () => import('../views/mobile/Select.vue')
 const Play = () => import('../views/mobile/Play.vue')
 const AdminLayout = () => import('../views/admin/Layout.vue')
 const GeneralAdmin = () => import('../views/admin/General.vue')
+const IdentityModeAdmin = () => import('../views/admin/IdentityMode.vue')
 const UserAdmin = () => import('../views/admin/User.vue')
 const RoomAdmin = () => import('../views/admin/Rooms.vue')
 
@@ -36,6 +37,7 @@ const router = createRouter({
       meta: { admin: true },
       children: [
         { path: 'rooms', component: RoomAdmin },
+        { path: 'identity-modes', component: IdentityModeAdmin },
         { path: 'generals', component: GeneralAdmin },
         { path: 'users', component: UserAdmin }
       ]

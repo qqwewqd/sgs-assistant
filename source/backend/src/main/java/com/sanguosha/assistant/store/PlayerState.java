@@ -20,6 +20,11 @@ public class PlayerState {
     private boolean chained;
     private boolean turnedOver;
     private String identity;
+    private boolean identityLeader;
+    private boolean identityVisibleRule;
+    private boolean allowLordGeneral;
+    private Integer initialHpBonus = 0;
+    private Integer maxHpBonus = 0;
     private Integer currentHp;
     private Integer maxHp;
     private Integer currentArmor;

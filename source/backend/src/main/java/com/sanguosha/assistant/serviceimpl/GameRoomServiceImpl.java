@@ -1,9 +1,12 @@
 package com.sanguosha.assistant.serviceimpl;
 
 import com.sanguosha.assistant.entity.General;
+import com.sanguosha.assistant.entity.IdentityMode;
+import com.sanguosha.assistant.entity.IdentityModeRule;
 import com.sanguosha.assistant.security.AuthUser;
 import com.sanguosha.assistant.service.GameRoomService;
 import com.sanguosha.assistant.service.GeneralService;
+import com.sanguosha.assistant.service.IdentityModeService;
 import com.sanguosha.assistant.store.LocalRoomStore;
 import com.sanguosha.assistant.store.PlayerState;
 import com.sanguosha.assistant.store.RoomState;
@@ -29,8 +32,19 @@ import org.springframework.stereotype.Service;
 public class GameRoomServiceImpl implements GameRoomService {
     private static final String IDENTITY_LORD = "主公";
 
+    private record IdentityAssignment(
+            String name,
+            boolean leader,
+            boolean visible,
+            boolean allowLordGeneral,
+            int initialHpBonus,
+            int maxHpBonus
+    ) {
+    }
+
     private final LocalRoomStore roomStore;
     private final GeneralService generalService;
+    private final IdentityModeService identityModeService;
     private final RoomSessionManager roomSessionManager;
     private final SecureRandom random = new SecureRandom();
 
@@ -38,11 +52,14 @@ public class GameRoomServiceImpl implements GameRoomService {
     private long roomTtlHours;
 
     @Override
-    public synchronized RoomView createRoom(AuthUser user) {
+    public synchronized RoomView createRoom(Long modeId, AuthUser user) {
+        IdentityMode mode = identityModeService.requireEnabledMode(modeId);
         String roomCode = generateRoomCode();
         RoomState room = new RoomState();
         room.setRoomCode(roomCode);
         room.setOwnerUserId(user.getId());
+        room.setIdentityModeId(mode.getId());
+        room.setIdentityModeName(mode.getName());
         room.getPlayers().add(newPlayer(user, true));
         saveRoom(room, false);
         return toView(room, user.getId());
@@ -97,11 +114,11 @@ public class GameRoomServiceImpl implements GameRoomService {
         }
         Collections.shuffle(generals, random);
 
-        List<String> identities = new ArrayList<>(identities(playerCount));
+        List<IdentityAssignment> identities = new ArrayList<>(identityAssignments(room, playerCount));
         Collections.shuffle(identities, random);
         for (int i = 0; i < playerCount; i++) {
             PlayerState player = room.getPlayers().get(i);
-            player.setIdentity(identities.get(i));
+            applyIdentity(player, identities.get(i));
             player.setLocked(false);
             player.setDead(false);
             player.setGeneralRevealed(false);
@@ -128,10 +145,10 @@ public class GameRoomServiceImpl implements GameRoomService {
             throw new AppException("已经锁定出阵，不能更换武将");
         }
         RoomView.GeneralCard selected = findInPool(player.getGeneralPool(), generalId);
-        if (selected == null && IDENTITY_LORD.equals(player.getIdentity())) {
+        if (selected == null && canUseLordGeneral(player)) {
             General general = generalService.requireGeneral(generalId);
             if (!Boolean.TRUE.equals(general.getIsLord())) {
-                throw new AppException("该武将未标记为主公可选");
+                throw new AppException("该武将未标记为特殊身份可选");
             }
             Set<Long> usedByOthers = usedGeneralIds(room, player.getUserId());
             if (usedByOthers.contains(generalId)) {
@@ -266,9 +283,10 @@ public class GameRoomServiceImpl implements GameRoomService {
             generalService.updateGeneralVitals(player.getSelectedGeneral().getId(), currentHp, maxHp, currentArmor);
             applyVitalsToSelectedGeneral(player, currentHp, maxHp, currentArmor);
         }
-        int lordBonus = initializingVitals ? lordHpBonus(player) : 0;
-        player.setCurrentHp(currentHp + lordBonus);
-        player.setMaxHp(maxHp + lordBonus);
+        int initialBonus = initializingVitals ? initialHpBonus(player) : 0;
+        int maxBonus = initializingVitals ? maxHpBonus(player) : 0;
+        player.setCurrentHp(currentHp + initialBonus);
+        player.setMaxHp(maxHp + maxBonus);
         player.setCurrentArmor(currentArmor);
         player.setMaxArmor(null);
         saveRoom(room, true);
@@ -327,7 +345,7 @@ public class GameRoomServiceImpl implements GameRoomService {
         RoomState room = requireRoom(roomCode);
         ensureOwner(room, user);
         for (PlayerState player : room.getPlayers()) {
-            player.setIdentity(null);
+            clearIdentity(player);
             player.setLocked(false);
             player.setDead(false);
             player.setGeneralRevealed(false);
@@ -381,7 +399,7 @@ public class GameRoomServiceImpl implements GameRoomService {
     public List<RoomView.GeneralCard> safeLordGenerals(String roomCode, String keyword, AuthUser user) {
         RoomState room = requireRoom(roomCode);
         PlayerState player = requirePlayer(room, user.getId());
-        if (!IDENTITY_LORD.equals(player.getIdentity())) {
+        if (!canUseLordGeneral(player)) {
             throw new AppException(ResultCode.FORBIDDEN);
         }
         Set<Long> dealtGeneralIds = dealtGeneralIds(room);
@@ -480,20 +498,90 @@ public class GameRoomServiceImpl implements GameRoomService {
         return room.getPlayers().stream().allMatch(PlayerState::isOnline);
     }
 
+    private List<IdentityAssignment> identityAssignments(RoomState room, int playerCount) {
+        if (room.getIdentityModeId() == null) {
+            IdentityMode mode = identityModeService.requireEnabledMode(null);
+            room.setIdentityModeId(mode.getId());
+            room.setIdentityModeName(mode.getName());
+        }
+        List<IdentityModeRule> rules = identityModeService.rulesForPlayerCount(room.getIdentityModeId(), playerCount);
+        List<IdentityAssignment> identities = new ArrayList<>();
+        for (IdentityModeRule rule : rules) {
+            for (int index = 0; index < rule.getQuantity(); index++) {
+                identities.add(new IdentityAssignment(
+                        rule.getIdentityName(),
+                        Boolean.TRUE.equals(rule.getIsLeader()),
+                        Boolean.TRUE.equals(rule.getIdentityVisible()),
+                        Boolean.TRUE.equals(rule.getAllowLordGeneral()),
+                        valueOrZero(rule.getInitialHpBonus()),
+                        valueOrZero(rule.getMaxHpBonus())
+                ));
+            }
+        }
+        return identities;
+    }
+
+    private void applyIdentity(PlayerState player, IdentityAssignment identity) {
+        player.setIdentity(identity.name());
+        player.setIdentityLeader(identity.leader());
+        player.setIdentityVisibleRule(identity.visible());
+        player.setAllowLordGeneral(identity.allowLordGeneral());
+        player.setInitialHpBonus(identity.initialHpBonus());
+        player.setMaxHpBonus(identity.maxHpBonus());
+    }
+
+    private void clearIdentity(PlayerState player) {
+        player.setIdentity(null);
+        player.setIdentityLeader(false);
+        player.setIdentityVisibleRule(false);
+        player.setAllowLordGeneral(false);
+        player.setInitialHpBonus(0);
+        player.setMaxHpBonus(0);
+    }
+
     private void applyConfiguredVitals(PlayerState player, RoomView.GeneralCard selected) {
         if (selected == null || !hasConfiguredVitals(selected)) {
             clearVitals(player);
             return;
         }
-        int lordBonus = lordHpBonus(player);
-        player.setCurrentHp(selected.getInitialHp() + lordBonus);
-        player.setMaxHp(selected.getMaxHp() + lordBonus);
+        player.setCurrentHp(selected.getInitialHp() + initialHpBonus(player));
+        player.setMaxHp(selected.getMaxHp() + maxHpBonus(player));
         player.setCurrentArmor(selected.getInitialArmor());
         player.setMaxArmor(null);
     }
 
-    private int lordHpBonus(PlayerState player) {
-        return IDENTITY_LORD.equals(player.getIdentity()) ? 1 : 0;
+    private int initialHpBonus(PlayerState player) {
+        return usesLegacyLordRule(player) ? 1 : valueOrZero(player.getInitialHpBonus());
+    }
+
+    private int maxHpBonus(PlayerState player) {
+        return usesLegacyLordRule(player) ? 1 : valueOrZero(player.getMaxHpBonus());
+    }
+
+    private boolean isLeaderIdentity(PlayerState player) {
+        return player != null && (player.isIdentityLeader() || usesLegacyLordRule(player));
+    }
+
+    private boolean canUseLordGeneral(PlayerState player) {
+        return player != null && (player.isAllowLordGeneral() || usesLegacyLordRule(player));
+    }
+
+    private boolean isIdentityPublic(PlayerState player) {
+        return player != null && (player.isIdentityVisibleRule() || isLeaderIdentity(player));
+    }
+
+    private boolean usesLegacyLordRule(PlayerState player) {
+        return player != null
+                && IDENTITY_LORD.equals(player.getIdentity())
+                && !player.isIdentityLeader()
+                && !player.isIdentityVisibleRule()
+                && !player.isAllowLordGeneral()
+                && valueOrZero(player.getInitialHpBonus()) == 0
+                && valueOrZero(player.getMaxHpBonus()) == 0;
+    }
+
+    private int valueOrZero(Integer value) {
+        return value == null ? 0 : value;
     }
 
     private boolean hasConfiguredVitals(RoomView.GeneralCard card) {
@@ -585,21 +673,6 @@ public class GameRoomServiceImpl implements GameRoomService {
                 .filter(marker -> marker.getName().equals(name))
                 .findFirst()
                 .orElse(null);
-    }
-
-    private List<String> identities(int playerCount) {
-        return switch (playerCount) {
-            case 2 -> List.of("主公", "反贼");
-            case 3 -> List.of("主公", "忠臣", "反贼");
-            case 4 -> List.of("主公", "忠臣", "反贼", "内奸");
-            case 5 -> List.of("主公", "忠臣", "反贼", "反贼", "内奸");
-            case 6 -> List.of("主公", "忠臣", "反贼", "反贼", "反贼", "内奸");
-            case 7 -> List.of("主公", "忠臣", "忠臣", "反贼", "反贼", "反贼", "内奸");
-            case 8 -> List.of("主公", "忠臣", "忠臣", "反贼", "反贼", "反贼", "反贼", "内奸");
-            case 9 -> List.of("主公", "忠臣", "忠臣", "忠臣", "反贼", "反贼", "反贼", "反贼", "内奸");
-            case 10 -> List.of("主公", "忠臣", "忠臣", "忠臣", "反贼", "反贼", "反贼", "反贼", "内奸", "内奸");
-            default -> throw new AppException("当前仅支持 2-10 人局");
-        };
     }
 
     private RoomView.GeneralCard toCard(General general) {
@@ -757,6 +830,8 @@ public class GameRoomServiceImpl implements GameRoomService {
         view.setRoomCode(room.getRoomCode());
         view.setStatus(room.getStatus());
         view.setOwnerUserId(room.getOwnerUserId());
+        view.setIdentityModeId(room.getIdentityModeId());
+        view.setIdentityModeName(room.getIdentityModeName());
         view.setOwner(viewer != null && viewer.isOwner());
         view.setCanStart(viewer != null && viewer.isOwner()
                 && RoomState.WAITING.equals(room.getStatus())
@@ -776,6 +851,8 @@ public class GameRoomServiceImpl implements GameRoomService {
             playerView.setGeneralRevealed(player.isGeneralRevealed());
             playerView.setChained(player.isChained());
             playerView.setTurnedOver(player.isTurnedOver());
+            playerView.setIdentityLeader(isLeaderIdentity(player));
+            playerView.setAllowLordGeneral(canUseLordGeneral(player));
             playerView.setCurrentHp(player.getCurrentHp());
             playerView.setMaxHp(player.getMaxHp());
             playerView.setCurrentArmor(player.getCurrentArmor());
@@ -784,9 +861,9 @@ public class GameRoomServiceImpl implements GameRoomService {
                 player.setMarkers(new ArrayList<>());
             }
             playerView.setMarkers(player.getMarkers().stream().map(this::copyMarker).toList());
-            boolean identityVisible = IDENTITY_LORD.equals(player.getIdentity()) || player.isDead() || player.getUserId().equals(viewerId);
+            boolean identityVisible = isIdentityPublic(player) || player.isDead() || player.getUserId().equals(viewerId);
             boolean publicGeneralVisible = player.isLocked()
-                    && (IDENTITY_LORD.equals(player.getIdentity()) || RoomState.PLAYING.equals(room.getStatus()))
+                    && (isLeaderIdentity(player) || RoomState.PLAYING.equals(room.getStatus()))
                     && (!startsHidden(player.getSelectedGeneral()) || player.isGeneralRevealed());
             boolean generalVisible = player.getUserId().equals(viewerId) || publicGeneralVisible;
             playerView.setIdentityVisible(identityVisible);
@@ -813,6 +890,11 @@ public class GameRoomServiceImpl implements GameRoomService {
             me.setGeneralRevealed(viewer.isGeneralRevealed());
             me.setChained(viewer.isChained());
             me.setTurnedOver(viewer.isTurnedOver());
+            me.setIdentityLeader(isLeaderIdentity(viewer));
+            me.setIdentityVisibleRule(isIdentityPublic(viewer));
+            me.setAllowLordGeneral(canUseLordGeneral(viewer));
+            me.setInitialHpBonus(initialHpBonus(viewer));
+            me.setMaxHpBonus(maxHpBonus(viewer));
             me.setCurrentHp(viewer.getCurrentHp());
             me.setMaxHp(viewer.getMaxHp());
             me.setCurrentArmor(viewer.getCurrentArmor());

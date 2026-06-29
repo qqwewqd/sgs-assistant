@@ -6,6 +6,7 @@
         <span>{{ user.username }}</span>
       </div>
       <router-link to="/admin/rooms">房间管理</router-link>
+      <router-link to="/admin/identity-modes">身份模式</router-link>
       <router-link to="/admin/generals">武将池</router-link>
       <router-link to="/admin/users">玩家开户</router-link>
       <button @click="logout">退出登录</button>

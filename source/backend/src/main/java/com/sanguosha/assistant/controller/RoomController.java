@@ -2,6 +2,7 @@ package com.sanguosha.assistant.controller;
 
 import com.sanguosha.assistant.service.GameRoomService;
 import com.sanguosha.assistant.util.SecurityUtil;
+import com.sanguosha.assistant.vo.CreateRoomRequest;
 import com.sanguosha.assistant.vo.Result;
 import com.sanguosha.assistant.vo.RoomActionRequest;
 import com.sanguosha.assistant.vo.RoomView;
@@ -23,8 +24,9 @@ public class RoomController {
     private final GameRoomService gameRoomService;
 
     @PostMapping
-    public Result<RoomView> createRoom() {
-        return Result.success(gameRoomService.createRoom(SecurityUtil.currentUser()));
+    public Result<RoomView> createRoom(@RequestBody(required = false) CreateRoomRequest request) {
+        Long modeId = request == null ? null : request.getModeId();
+        return Result.success(gameRoomService.createRoom(modeId, SecurityUtil.currentUser()));
     }
 
     @PostMapping("/{roomCode}/join")

@@ -5,7 +5,7 @@ import com.sanguosha.assistant.vo.RoomView;
 import java.util.List;
 
 public interface GameRoomService {
-    RoomView createRoom(AuthUser user);
+    RoomView createRoom(Long modeId, AuthUser user);
 
     RoomView joinRoom(String roomCode, AuthUser user);
 

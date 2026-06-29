@@ -371,8 +371,7 @@ const otherPlayers = computed(() => room.value?.players?.filter((player) => play
 const allPlayers = computed(() => room.value?.players || [])
 const alivePlayers = computed(() => allPlayers.value.filter((player) => !player.dead))
 const myExtraGenerals = computed(() => room.value?.me?.extraGenerals || [])
-const isLord = computed(() => room.value?.me?.identity === '主公')
-const identityShown = computed(() => isLord.value || holdingIdentity.value)
+const identityShown = computed(() => room.value?.me?.identityVisibleRule || room.value?.me?.identityLeader || holdingIdentity.value)
 const canRevealGeneral = computed(() => Boolean(room.value?.me?.selectedGeneral?.startsHidden && !room.value?.me?.generalRevealed))
 const needsVitalsSetup = computed(() => Boolean(room.value?.me?.selectedGeneral && !hasVitals(room.value.me)))
 
@@ -398,11 +397,11 @@ function openImage(general) {
 }
 
 function holdIdentity() {
-  if (!isLord.value) holdingIdentity.value = true
+  if (!room.value?.me?.identityVisibleRule && !room.value?.me?.identityLeader) holdingIdentity.value = true
 }
 
 function releaseIdentity() {
-  if (!isLord.value) holdingIdentity.value = false
+  if (!room.value?.me?.identityVisibleRule && !room.value?.me?.identityLeader) holdingIdentity.value = false
 }
 
 async function drawExtra() {

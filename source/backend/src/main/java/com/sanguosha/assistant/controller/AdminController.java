@@ -2,12 +2,15 @@ package com.sanguosha.assistant.controller;
 
 import com.sanguosha.assistant.service.AdminRoomService;
 import com.sanguosha.assistant.service.GeneralService;
+import com.sanguosha.assistant.service.IdentityModeService;
 import com.sanguosha.assistant.service.UserService;
 import com.sanguosha.assistant.util.SecurityUtil;
 import com.sanguosha.assistant.vo.AdminRoomVO;
 import com.sanguosha.assistant.vo.AppException;
 import com.sanguosha.assistant.vo.CreateUserRequest;
 import com.sanguosha.assistant.vo.GeneralVO;
+import com.sanguosha.assistant.vo.IdentityModeRequest;
+import com.sanguosha.assistant.vo.IdentityModeVO;
 import com.sanguosha.assistant.vo.PageVO;
 import com.sanguosha.assistant.vo.Result;
 import com.sanguosha.assistant.vo.UserVO;
@@ -36,6 +39,7 @@ public class AdminController {
     private final UserService userService;
     private final GeneralService generalService;
     private final AdminRoomService adminRoomService;
+    private final IdentityModeService identityModeService;
 
     @GetMapping("/users")
     public Result<PageVO<UserVO>> users(
@@ -105,6 +109,27 @@ public class AdminController {
     @DeleteMapping("/generals/{id}")
     public Result<Void> deleteGeneral(@PathVariable Long id) {
         generalService.deleteGeneral(id);
+        return Result.success(null);
+    }
+
+    @GetMapping("/identity-modes")
+    public Result<List<IdentityModeVO>> identityModes() {
+        return Result.success(identityModeService.listModes(true));
+    }
+
+    @PostMapping("/identity-modes")
+    public Result<IdentityModeVO> createIdentityMode(@RequestBody IdentityModeRequest request) {
+        return Result.success(identityModeService.createMode(request));
+    }
+
+    @PutMapping("/identity-modes/{id}")
+    public Result<IdentityModeVO> updateIdentityMode(@PathVariable Long id, @RequestBody IdentityModeRequest request) {
+        return Result.success(identityModeService.updateMode(id, request));
+    }
+
+    @DeleteMapping("/identity-modes/{id}")
+    public Result<Void> deleteIdentityMode(@PathVariable Long id) {
+        identityModeService.deleteMode(id);
         return Result.success(null);
     }
 

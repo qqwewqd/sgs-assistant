@@ -19,8 +19,8 @@
         >
           {{ identityShown ? room.me.identity : '按住看身份' }}
         </div>
-        <button v-if="room.me.identity === '主公'" class="warm-button secondary" @click="openLordSearch">
-          全量主公将检索
+        <button v-if="room.me.allowLordGeneral" class="warm-button secondary" @click="openLordSearch">
+          特殊武将检索
         </button>
       </section>
 
@@ -97,7 +97,7 @@
 
     <van-popup v-model:show="lordSearchVisible" position="bottom" round class="lord-popup">
       <div class="lord-search">
-        <input v-model.trim="keyword" class="field" placeholder="搜索主公将" />
+        <input v-model.trim="keyword" class="field" placeholder="搜索武将" />
         <div class="lord-body">
           <div class="lord-list">
             <button
@@ -157,8 +157,7 @@ const modalVisible = computed({
 
 const selectedGeneral = computed(() => room.value?.me?.selectedGeneral || room.value?.me?.generalPool?.find((item) => item.id === selectedId.value))
 const preBattlePlayers = computed(() => room.value?.players?.filter((player) => player.userId !== room.value?.me?.userId) || [])
-const isLord = computed(() => room.value?.me?.identity === '主公')
-const identityShown = computed(() => isLord.value || holdingIdentity.value)
+const identityShown = computed(() => room.value?.me?.identityVisibleRule || room.value?.me?.identityLeader || holdingIdentity.value)
 
 onMounted(loadRoom)
 useRoomSocket(roomCode, loadRoom)
@@ -196,11 +195,11 @@ function openImage(general) {
 }
 
 function holdIdentity() {
-  if (!isLord.value) holdingIdentity.value = true
+  if (!room.value?.me?.identityVisibleRule && !room.value?.me?.identityLeader) holdingIdentity.value = true
 }
 
 function releaseIdentity() {
-  if (!isLord.value) holdingIdentity.value = false
+  if (!room.value?.me?.identityVisibleRule && !room.value?.me?.identityLeader) holdingIdentity.value = false
 }
 
 async function lock() {

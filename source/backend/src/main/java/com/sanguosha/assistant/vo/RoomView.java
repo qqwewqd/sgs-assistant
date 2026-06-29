@@ -10,6 +10,8 @@ public class RoomView {
     private String roomCode;
     private String status;
     private Long ownerUserId;
+    private Long identityModeId;
+    private String identityModeName;
     private boolean owner;
     private boolean canStart;
     private boolean canRestart;
@@ -29,6 +31,8 @@ public class RoomView {
         private boolean chained;
         private boolean turnedOver;
         private String identity;
+        private boolean identityLeader;
+        private boolean allowLordGeneral;
         private Integer currentHp;
         private Integer maxHp;
         private Integer currentArmor;
@@ -50,6 +54,11 @@ public class RoomView {
         private boolean generalRevealed;
         private boolean chained;
         private boolean turnedOver;
+        private boolean identityLeader;
+        private boolean identityVisibleRule;
+        private boolean allowLordGeneral;
+        private Integer initialHpBonus;
+        private Integer maxHpBonus;
         private Integer currentHp;
         private Integer maxHp;
         private Integer currentArmor;

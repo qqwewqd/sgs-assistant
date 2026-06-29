@@ -63,6 +63,8 @@ public class AdminRoomServiceImpl implements AdminRoomService {
         vo.setRoomCode(room.getRoomCode());
         vo.setStatus(room.getStatus());
         vo.setOwnerUserId(room.getOwnerUserId());
+        vo.setIdentityModeId(room.getIdentityModeId());
+        vo.setIdentityModeName(room.getIdentityModeName());
         vo.setPlayerCount(room.getPlayers().size());
         vo.setOnlineCount((int) room.getPlayers().stream().filter(PlayerState::isOnline).count());
         vo.setOfflineCount(vo.getPlayerCount() - vo.getOnlineCount());

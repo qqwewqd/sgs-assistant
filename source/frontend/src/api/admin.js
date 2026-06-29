@@ -9,5 +9,10 @@ export const createGeneral = (formData) => request.post('/admin/generals', formD
 export const updateGeneral = (id, formData) => request.put(`/admin/generals/${id}`, formData)
 export const deleteGeneral = (id) => request.delete(`/admin/generals/${id}`)
 
+export const listIdentityModes = () => request.get('/admin/identity-modes')
+export const createIdentityMode = (payload) => request.post('/admin/identity-modes', payload)
+export const updateIdentityMode = (id, payload) => request.put(`/admin/identity-modes/${id}`, payload)
+export const deleteIdentityMode = (id) => request.delete(`/admin/identity-modes/${id}`)
+
 export const listRooms = (params) => request.get('/admin/rooms', { params })
 export const dissolveRoom = (roomCode) => request.delete(`/admin/rooms/${roomCode}`)

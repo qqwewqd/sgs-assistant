@@ -1,6 +1,7 @@
 import request from '../utils/request'
 
-export const createRoom = () => request.post('/rooms')
+export const listIdentityModes = () => request.get('/identity-modes')
+export const createRoom = (modeId) => request.post('/rooms', { modeId })
 export const joinRoom = (roomCode) => request.post(`/rooms/${roomCode}/join`)
 export const getRoom = (roomCode) => request.get(`/rooms/${roomCode}`)
 export const startGame = (roomCode) => request.post(`/rooms/${roomCode}/start`)

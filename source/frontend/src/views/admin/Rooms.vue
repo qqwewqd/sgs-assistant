@@ -3,7 +3,7 @@
     <header class="admin-head">
       <div>
         <h1>房间管理</h1>
-        <p class="muted">查看本机运行房间，处理离线或异常对局</p>
+        <p class="muted">查看 Redis 中的运行房间，处理离线或异常对局</p>
       </div>
       <el-button type="primary" :loading="loading" @click="load">刷新</el-button>
     </header>
@@ -42,6 +42,7 @@
         </template>
       </el-table-column>
       <el-table-column prop="roomCode" label="房间号" width="120" />
+      <el-table-column prop="identityModeName" label="身份模式" min-width="140" />
       <el-table-column label="阶段" width="110">
         <template #default="{ row }">
           <el-tag :type="statusType(row.status)">{{ statusText(row.status) }}</el-tag>
