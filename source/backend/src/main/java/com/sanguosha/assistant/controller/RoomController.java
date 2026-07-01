@@ -114,6 +114,15 @@ public class RoomController {
         ));
     }
 
+    @PostMapping("/{roomCode}/crown-prince")
+    public Result<RoomView> appointCrownPrince(@PathVariable String roomCode, @RequestBody RoomActionRequest request) {
+        Long targetUserId = request == null ? null : request.getCrownPrinceUserId();
+        if (targetUserId == null && request != null) {
+            targetUserId = request.getTargetUserId();
+        }
+        return Result.success(gameRoomService.appointCrownPrince(roomCode, targetUserId, SecurityUtil.currentUser()));
+    }
+
     @PostMapping("/{roomCode}/restart")
     public Result<RoomView> restart(@PathVariable String roomCode) {
         return Result.success(gameRoomService.restart(roomCode, SecurityUtil.currentUser()));
@@ -136,5 +145,13 @@ public class RoomController {
             @RequestParam(required = false) String keyword
     ) {
         return Result.success(gameRoomService.safeLordGenerals(roomCode, keyword, SecurityUtil.currentUser()));
+    }
+
+    @GetMapping("/{roomCode}/manual-pick-generals")
+    public Result<List<RoomView.GeneralCard>> manualPickGenerals(
+            @PathVariable String roomCode,
+            @RequestParam(required = false) String keyword
+    ) {
+        return Result.success(gameRoomService.manualPickGenerals(roomCode, keyword, SecurityUtil.currentUser()));
     }
 }

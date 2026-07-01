@@ -6,6 +6,7 @@ import lombok.Data;
 public class RoomActionRequest {
     private Long generalId;
     private Long targetUserId;
+    private Long crownPrinceUserId;
     private String faction;
     private Integer currentHp;
     private Integer maxHp;

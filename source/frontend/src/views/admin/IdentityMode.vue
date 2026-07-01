@@ -40,7 +40,7 @@
       </el-table-column>
     </el-table>
 
-    <el-dialog v-model="dialogVisible" :title="form.id ? '编辑身份模式' : '新建身份模式'" width="min(92vw, 900px)">
+    <el-dialog v-model="dialogVisible" :title="form.id ? '编辑身份模式' : '新建身份模式'" width="min(96vw, 1040px)">
       <el-form label-width="92px">
         <el-form-item label="模式名称">
           <el-input v-model.trim="form.name" maxlength="50" />
@@ -51,10 +51,10 @@
       </el-form>
 
       <div class="rule-toolbar">
-        <el-select v-model="activePlayerCount" class="count-select">
+        <el-select v-model="activePlayerCount" class="count-select" placeholder="选择人数">
           <el-option v-for="count in playerCountOptions" :key="count" :label="`${count} 人`" :value="count" />
         </el-select>
-        <span class="rule-total">身份数量 {{ selectedRuleQuantity }} / {{ activePlayerCount }}</span>
+        <span class="rule-total">{{ activePlayerCount ? `身份数量 ${selectedRuleQuantity} / ${activePlayerCount}` : '请先选择人数' }}</span>
         <el-button @click="addRule">添加规则</el-button>
       </div>
 
@@ -63,9 +63,9 @@
         class="rule-table"
         border
         max-height="440"
-        :empty-text="`${activePlayerCount} 人局暂无规则`"
+        :empty-text="activePlayerCount ? `${activePlayerCount} 人局暂无规则` : '请先选择人数'"
       >
-        <el-table-column label="身份" width="238">
+        <el-table-column label="身份" width="220">
           <template #default="{ row }">
             <el-input v-model.trim="row.identityName" class="identity-input" maxlength="20" size="small" />
           </template>
@@ -73,6 +73,11 @@
         <el-table-column label="数量" width="72">
           <template #default="{ row }">
             <el-input-number v-model="row.quantity" class="compact-number" :min="1" :max="10" :controls="false" size="small" />
+          </template>
+        </el-table-column>
+        <el-table-column label="发将数" width="82">
+          <template #default="{ row }">
+            <el-input-number v-model="row.generalPoolSize" class="compact-number" :min="1" :max="20" :controls="false" size="small" />
           </template>
         </el-table-column>
         <el-table-column label="选将明置" width="88" align="center">
@@ -83,6 +88,11 @@
         <el-table-column label="身份公开" width="88" align="center">
           <template #default="{ row }">
             <el-switch v-model="row.identityVisible" />
+          </template>
+        </el-table-column>
+        <el-table-column label="同身份看将框" width="112" align="center">
+          <template #default="{ row }">
+            <el-switch v-model="row.sameIdentityGeneralVisible" />
           </template>
         </el-table-column>
         <el-table-column label="可选主公池" width="96" align="center">
@@ -139,7 +149,7 @@ const rows = ref([])
 const loading = ref(false)
 const saving = ref(false)
 const dialogVisible = ref(false)
-const activePlayerCount = ref(7)
+const activePlayerCount = ref(null)
 const playerCountOptions = Array.from({ length: 9 }, (_, index) => index + 2)
 const overviewCounts = reactive({})
 const form = reactive(emptyForm())
@@ -162,7 +172,7 @@ async function load() {
 
 function openCreate() {
   Object.assign(form, emptyForm())
-  activePlayerCount.value = 7
+  activePlayerCount.value = null
   dialogVisible.value = true
 }
 
@@ -174,7 +184,7 @@ function openEdit(row) {
     enabled: row.enabled,
     rules
   })
-  activePlayerCount.value = row.playerCounts[0] || 7
+  activePlayerCount.value = null
   dialogVisible.value = true
 }
 
@@ -215,12 +225,18 @@ async function remove(row) {
 }
 
 function addRule() {
+  if (!activePlayerCount.value) {
+    ElMessage.warning('请先选择人数')
+    return
+  }
   form.rules.push({
     playerCount: activePlayerCount.value,
     identityName: '',
     quantity: 1,
+    generalPoolSize: 2,
     isLeader: false,
     identityVisible: false,
+    sameIdentityGeneralVisible: false,
     allowLordGeneral: false,
     initialHpBonus: 0,
     maxHpBonus: 0,
@@ -268,8 +284,10 @@ function copyRule(rule) {
     playerCount: rule.playerCount,
     identityName: rule.identityName,
     quantity: rule.quantity,
+    generalPoolSize: Number(rule.generalPoolSize || 2),
     isLeader: Boolean(rule.isLeader),
     identityVisible: Boolean(rule.identityVisible),
+    sameIdentityGeneralVisible: Boolean(rule.sameIdentityGeneralVisible),
     allowLordGeneral: Boolean(rule.allowLordGeneral),
     initialHpBonus: Number(rule.initialHpBonus || 0),
     maxHpBonus: Number(rule.maxHpBonus || 0),

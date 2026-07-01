@@ -18,6 +18,8 @@ public class RoomState {
     private Long identityModeId;
     private String identityModeName;
     private String status = WAITING;
+    private Long crownPrinceUserId;
+    private boolean crownPrinceAppointed;
     private List<PlayerState> players = new ArrayList<>();
     private Instant createdAt = Instant.now();
     private Instant updatedAt = Instant.now();

@@ -19,9 +19,14 @@
         >
           {{ identityShown ? room.me.identity : '按住看身份' }}
         </div>
-        <button v-if="room.me.allowLordGeneral" class="warm-button secondary" @click="openLordSearch">
-          特殊武将检索
-        </button>
+        <div v-if="room.me.allowLordGeneral || room.me.canManualPick" class="secret-actions">
+          <button v-if="room.me.allowLordGeneral" class="warm-button secondary" @click="openLordSearch">
+            特殊武将检索
+          </button>
+          <button v-if="room.me.canManualPick" class="warm-button secondary" @click="openManualPick">
+            点将
+          </button>
+        </div>
       </section>
 
       <section v-if="preBattlePlayers.length" class="pre-battle">
@@ -35,14 +40,24 @@
             <strong>{{ player.username }}</strong>
             <span v-if="player.owner" class="status-pill">房主</span>
           </div>
-          <button
-            v-if="player.selectedGeneral"
-            class="revealed-general"
-            @click="modalImage = player.selectedGeneral"
-          >
-            {{ player.selectedGeneral.name }}
-          </button>
-          <span v-else class="muted">{{ player.locked ? '武将暗置' : '等待锁定' }}</span>
+          <div class="pre-battle-actions">
+            <button
+              v-if="player.selectedGeneral"
+              class="revealed-general"
+              @click="modalImage = player.selectedGeneral"
+            >
+              {{ player.selectedGeneral.name }}
+            </button>
+            <span v-else class="muted">{{ player.locked ? '武将暗置' : '等待锁定' }}</span>
+            <button
+              v-if="player.generalPool?.length"
+              type="button"
+              class="pool-trigger"
+              @click="openTeammatePool(player)"
+            >
+              将框
+            </button>
+          </div>
           <span class="identity-badge">{{ player.identityVisible ? player.identity : '?' }}</span>
         </article>
       </section>
@@ -120,6 +135,52 @@
       </div>
     </van-popup>
 
+    <van-popup v-model:show="manualPickVisible" position="bottom" round class="lord-popup">
+      <div class="lord-search">
+        <input v-model.trim="manualKeyword" class="field" placeholder="搜索点将武将" />
+        <div class="lord-body">
+          <div class="lord-list">
+            <button
+              v-for="general in manualCards"
+              :key="general.id"
+              :class="['lord-row', manualPreview?.id === general.id && 'active']"
+              @click="manualPreview = general"
+            >
+              {{ general.name }}
+            </button>
+          </div>
+          <div class="lord-preview">
+            <button v-if="manualPreview" type="button" class="lord-preview-image" @click="openImage(manualPreview)">
+              <img :src="assetUrl(manualPreview.imagePath)" :alt="manualPreview.name" />
+            </button>
+            <span v-else class="muted">选择一名武将</span>
+          </div>
+        </div>
+        <button class="warm-button" :disabled="!manualPreview" @click="confirmManualPick">确认点将</button>
+      </div>
+    </van-popup>
+
+    <van-popup v-model:show="teammatePoolVisible" position="bottom" round class="teammate-popup">
+      <div class="teammate-popup-inner">
+        <div class="teammate-popup-head">
+          <strong>{{ teammatePoolPlayer?.username || '队友' }}的将框</strong>
+          <span class="muted">{{ teammatePoolPlayer?.generalPool?.length || 0 }} 张</span>
+        </div>
+        <div class="teammate-popup-grid">
+          <button
+            v-for="general in teammatePoolPlayer?.generalPool || []"
+            :key="general.id"
+            type="button"
+            :class="['teammate-general', teammatePoolPlayer?.selectedGeneral?.id === general.id && 'selected']"
+            @click="openImage(general)"
+          >
+            <img :src="assetUrl(general.imagePath)" :alt="general.name" />
+            <span>{{ general.name }}</span>
+          </button>
+        </div>
+      </div>
+    </van-popup>
+
     <ImageModal v-model="modalVisible" :image="modalImage" />
   </main>
 </template>
@@ -129,7 +190,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Popup as VanPopup, showConfirmDialog, showToast } from 'vant'
 import ImageModal from '../../components/ImageModal.vue'
-import { chooseGeneral, dissolveRoom, getRoom, lockGeneral, safeLordGenerals } from '../../api/room'
+import { chooseGeneral, dissolveRoom, getRoom, lockGeneral, manualPickGenerals, safeLordGenerals } from '../../api/room'
 import { useRoomSocket } from '../../composables/useWebSocket'
 import { useGameStore } from '../../store/game'
 import { assetUrl } from '../../utils/pathHelper'
@@ -145,13 +206,25 @@ const lordSearchVisible = ref(false)
 const keyword = ref('')
 const lordCards = ref([])
 const preview = ref(null)
+const manualPickVisible = ref(false)
+const manualKeyword = ref('')
+const manualCards = ref([])
+const manualPreview = ref(null)
+const teammatePoolPlayer = ref(null)
 const modalImage = ref(null)
 const dissolving = ref(false)
 let keywordTimer = 0
+let manualKeywordTimer = 0
 const modalVisible = computed({
   get: () => Boolean(modalImage.value),
   set: (value) => {
     if (!value) modalImage.value = null
+  }
+})
+const teammatePoolVisible = computed({
+  get: () => Boolean(teammatePoolPlayer.value),
+  set: (value) => {
+    if (!value) teammatePoolPlayer.value = null
   }
 })
 
@@ -165,6 +238,11 @@ useRoomSocket(roomCode, loadRoom)
 watch(keyword, () => {
   window.clearTimeout(keywordTimer)
   keywordTimer = window.setTimeout(fetchLordCards, 180)
+})
+
+watch(manualKeyword, () => {
+  window.clearTimeout(manualKeywordTimer)
+  manualKeywordTimer = window.setTimeout(fetchManualCards, 180)
 })
 
 async function loadRoom() {
@@ -192,6 +270,10 @@ async function pick(general) {
 
 function openImage(general) {
   if (general) modalImage.value = general
+}
+
+function openTeammatePool(player) {
+  teammatePoolPlayer.value = player
 }
 
 function holdIdentity() {
@@ -236,6 +318,31 @@ async function confirmLordPick() {
   if (!preview.value) return
   await pick(preview.value)
   lordSearchVisible.value = false
+}
+
+async function openManualPick() {
+  manualPickVisible.value = true
+  manualKeyword.value = ''
+  manualPreview.value = null
+  await fetchManualCards()
+}
+
+async function fetchManualCards() {
+  if (!manualPickVisible.value) return
+  try {
+    manualCards.value = await manualPickGenerals(roomCode, manualKeyword.value)
+    if (!manualCards.value.some((item) => item.id === manualPreview.value?.id)) {
+      manualPreview.value = manualCards.value[0] || null
+    }
+  } catch (error) {
+    showToast(error.message)
+  }
+}
+
+async function confirmManualPick() {
+  if (!manualPreview.value) return
+  await pick(manualPreview.value)
+  manualPickVisible.value = false
 }
 
 async function dissolve() {
@@ -291,9 +398,23 @@ function isRoomGone(error) {
 
 .secret-row {
   display: grid;
-  grid-template-columns: 1fr 142px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
   gap: 10px;
   margin-bottom: 16px;
+}
+
+.secret-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.secret-actions .warm-button {
+  min-width: 96px;
+  min-height: 44px;
+  padding: 0 12px;
 }
 
 .pool {
@@ -314,8 +435,52 @@ function isRoomGone(error) {
   margin-bottom: 8px;
 }
 
+.teammate-general {
+  min-width: 0;
+  border: 1px solid var(--warm-line);
+  border-radius: 8px;
+  padding: 4px;
+  background: #fffaf2;
+  color: var(--warm-text);
+  cursor: zoom-in;
+}
+
+.teammate-general.selected {
+  border-color: var(--warm-primary);
+  box-shadow: 0 0 0 2px rgba(177, 86, 31, 0.14);
+}
+
+.teammate-general img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #f4dcc0;
+}
+
+.teammate-general span {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--warm-primary-strong);
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .pre-battle-row strong {
   margin-right: 6px;
+}
+
+.pre-battle-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 
 .revealed-general {
@@ -324,6 +489,18 @@ function isRoomGone(error) {
   color: var(--warm-primary-strong);
   font-weight: 900;
   text-align: right;
+}
+
+.pool-trigger {
+  flex: 0 0 auto;
+  min-height: 28px;
+  border: 1px solid var(--warm-line);
+  border-radius: 8px;
+  padding: 0 8px;
+  background: #fffaf2;
+  color: var(--warm-primary-strong);
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .identity-badge {
@@ -432,6 +609,37 @@ function isRoomGone(error) {
   background: var(--warm-bg);
 }
 
+.teammate-popup {
+  max-height: 72vh;
+  background: #fff7ea;
+}
+
+.teammate-popup-inner {
+  display: grid;
+  gap: 12px;
+  max-height: 72vh;
+  padding: 16px;
+  overflow: auto;
+}
+
+.teammate-popup-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.teammate-popup-head strong {
+  color: var(--warm-primary-strong);
+  font-size: 18px;
+}
+
+.teammate-popup-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 8px;
+}
+
 .lord-search {
   display: grid;
   gap: 12px;
@@ -492,5 +700,19 @@ function isRoomGone(error) {
   padding: 0;
   background: transparent;
   cursor: zoom-in;
+}
+
+@media (max-width: 430px) {
+  .secret-row {
+    grid-template-columns: 1fr;
+  }
+
+  .secret-actions {
+    justify-content: stretch;
+  }
+
+  .secret-actions .warm-button {
+    flex: 1 1 0;
+  }
 }
 </style>

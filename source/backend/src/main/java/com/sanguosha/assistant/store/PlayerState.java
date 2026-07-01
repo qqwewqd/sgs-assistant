@@ -23,6 +23,7 @@ public class PlayerState {
     private boolean identityLeader;
     private boolean identityVisibleRule;
     private boolean allowLordGeneral;
+    private boolean sameIdentityGeneralVisible;
     private Integer initialHpBonus = 0;
     private Integer maxHpBonus = 0;
     private Integer currentHp;

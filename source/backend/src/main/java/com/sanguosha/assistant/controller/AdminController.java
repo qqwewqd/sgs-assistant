@@ -1,12 +1,15 @@
 package com.sanguosha.assistant.controller;
 
 import com.sanguosha.assistant.service.AdminRoomService;
+import com.sanguosha.assistant.service.AppSettingService;
 import com.sanguosha.assistant.service.GeneralService;
 import com.sanguosha.assistant.service.IdentityModeService;
 import com.sanguosha.assistant.service.UserService;
 import com.sanguosha.assistant.util.SecurityUtil;
 import com.sanguosha.assistant.vo.AdminRoomVO;
 import com.sanguosha.assistant.vo.AppException;
+import com.sanguosha.assistant.vo.AppSettingsRequest;
+import com.sanguosha.assistant.vo.AppSettingsVO;
 import com.sanguosha.assistant.vo.CreateUserRequest;
 import com.sanguosha.assistant.vo.GeneralVO;
 import com.sanguosha.assistant.vo.IdentityModeRequest;
@@ -40,6 +43,7 @@ public class AdminController {
     private final GeneralService generalService;
     private final AdminRoomService adminRoomService;
     private final IdentityModeService identityModeService;
+    private final AppSettingService appSettingService;
 
     @GetMapping("/users")
     public Result<PageVO<UserVO>> users(
@@ -145,5 +149,15 @@ public class AdminController {
     public Result<Void> dissolveRoom(@PathVariable String roomCode) {
         adminRoomService.dissolveRoom(roomCode);
         return Result.success(null);
+    }
+
+    @GetMapping("/settings")
+    public Result<AppSettingsVO> settings() {
+        return Result.success(appSettingService.getSettings());
+    }
+
+    @PutMapping("/settings")
+    public Result<AppSettingsVO> updateSettings(@RequestBody AppSettingsRequest request) {
+        return Result.success(appSettingService.updateSettings(request));
     }
 }

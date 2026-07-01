@@ -46,7 +46,7 @@ internal sealed class LauncherForm : Form
     public LauncherForm()
     {
         baseDir = AppDomain.CurrentDomain.BaseDirectory;
-        jarPath = Path.Combine(baseDir, "backend", "target", "assistant-0.0.1-SNAPSHOT.jar");
+        jarPath = ResolveJarPath(baseDir);
 
         Text = "SGS 局域网版";
         StartPosition = FormStartPosition.CenterScreen;
@@ -147,6 +147,16 @@ internal sealed class LauncherForm : Form
         RefreshAddressList();
         AppendLog("准备就绪。点击“启动”后，本窗口会在后台运行服务，不再打开命令行窗口。");
         RefreshRuntimeState();
+    }
+
+    private static string ResolveJarPath(string baseDir)
+    {
+        string releaseJar = Path.Combine(baseDir, "assistant-0.0.1-SNAPSHOT.jar");
+        if (File.Exists(releaseJar))
+        {
+            return releaseJar;
+        }
+        return Path.Combine(baseDir, "backend", "target", "assistant-0.0.1-SNAPSHOT.jar");
     }
 
     private void StartServer()

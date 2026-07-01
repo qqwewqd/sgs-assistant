@@ -47,9 +47,11 @@ CREATE TABLE IF NOT EXISTS identity_mode_rules (
     player_count INT NOT NULL,
     identity_name VARCHAR(20) NOT NULL,
     quantity INT NOT NULL DEFAULT 1,
+    general_pool_size INT NOT NULL DEFAULT 2,
     is_leader BOOLEAN NOT NULL DEFAULT FALSE,
     identity_visible BOOLEAN NOT NULL DEFAULT FALSE,
     allow_lord_general BOOLEAN NOT NULL DEFAULT FALSE,
+    same_identity_general_visible BOOLEAN NOT NULL DEFAULT FALSE,
     initial_hp_bonus INT NOT NULL DEFAULT 0,
     max_hp_bonus INT NOT NULL DEFAULT 0,
     sort_order INT NOT NULL DEFAULT 0,
@@ -59,6 +61,27 @@ CREATE TABLE IF NOT EXISTS identity_mode_rules (
 
 CREATE UNIQUE INDEX IF NOT EXISTS uk_identity_mode_rules_name ON identity_mode_rules (mode_id, player_count, identity_name);
 CREATE INDEX IF NOT EXISTS idx_identity_mode_rules_mode_count ON identity_mode_rules (mode_id, player_count);
+
+ALTER TABLE identity_mode_rules ADD COLUMN IF NOT EXISTS general_pool_size INT NOT NULL DEFAULT 2;
+ALTER TABLE identity_mode_rules ADD COLUMN IF NOT EXISTS same_identity_general_visible BOOLEAN NOT NULL DEFAULT FALSE;
+
+CREATE TABLE IF NOT EXISTS app_settings (
+    setting_key VARCHAR(64) PRIMARY KEY,
+    setting_value VARCHAR(255) NOT NULL,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO app_settings (setting_key, setting_value)
+SELECT 'manual_pick_enabled', 'false'
+WHERE NOT EXISTS (
+    SELECT 1 FROM app_settings WHERE setting_key = 'manual_pick_enabled'
+);
+
+INSERT INTO app_settings (setting_key, setting_value)
+SELECT 'crown_prince_enabled', 'false'
+WHERE NOT EXISTS (
+    SELECT 1 FROM app_settings WHERE setting_key = 'crown_prince_enabled'
+);
 
 MERGE INTO identity_modes (name, enabled, builtin)
 KEY(name)

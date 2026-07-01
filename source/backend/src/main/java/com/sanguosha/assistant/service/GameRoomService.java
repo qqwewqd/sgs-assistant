@@ -33,6 +33,8 @@ public interface GameRoomService {
 
     RoomView updateOwnStatus(String roomCode, Boolean chained, Boolean turnedOver, AuthUser user);
 
+    RoomView appointCrownPrince(String roomCode, Long targetUserId, AuthUser user);
+
     RoomView restart(String roomCode, AuthUser user);
 
     RoomView leave(String roomCode, AuthUser user);
@@ -40,6 +42,8 @@ public interface GameRoomService {
     void dissolve(String roomCode, AuthUser user);
 
     List<RoomView.GeneralCard> safeLordGenerals(String roomCode, String keyword, AuthUser user);
+
+    List<RoomView.GeneralCard> manualPickGenerals(String roomCode, String keyword, AuthUser user);
 
     void touch(String roomCode);
 

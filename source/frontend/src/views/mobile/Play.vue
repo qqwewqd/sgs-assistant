@@ -20,7 +20,9 @@
             :disabled="!player.selectedGeneral"
             @click="openImage(player.selectedGeneral)"
           >
-            <strong>{{ player.username }}</strong>
+            <strong class="battle-name">
+              <span>{{ player.username }}</span>
+            </strong>
             <p>{{ player.selectedGeneral?.name || (player.generalVisible ? '未选择' : '武将暗置') }}</p>
           </button>
           <div class="battle-vitals">
@@ -45,6 +47,7 @@
           </div>
 
           <div v-if="hasCardStatus(player)" class="card-status-row">
+            <span v-if="player.crownPrince" class="status-chip crown-status">储君</span>
             <span v-if="player.chained" class="status-chip">横置</span>
             <span v-if="player.turnedOver" class="status-chip">翻面</span>
             <span v-for="marker in player.markers" :key="`${player.userId}-${marker.name}`" class="card-marker-chip">
@@ -92,15 +95,15 @@
           <div class="vitals-form">
             <label>
               <span>初始血量</span>
-              <input v-model.number="vitalsForm.currentHp" class="field" type="number" min="0" max="99" />
+              <input v-model.trim="vitalsForm.currentHp" class="field" type="text" inputmode="numeric" pattern="[0-9]*" />
             </label>
             <label>
               <span>血量上限</span>
-              <input v-model.number="vitalsForm.maxHp" class="field" type="number" min="1" max="99" />
+              <input v-model.trim="vitalsForm.maxHp" class="field" type="text" inputmode="numeric" pattern="[0-9]*" />
             </label>
             <label>
               <span>初始护甲</span>
-              <input v-model.number="vitalsForm.currentArmor" class="field" type="number" min="0" max="99" />
+              <input v-model.trim="vitalsForm.currentArmor" class="field" type="text" inputmode="numeric" pattern="[0-9]*" />
             </label>
           </div>
           <button class="warm-button" :disabled="vitalsBusy" @click="submitVitalsForm">
@@ -157,6 +160,7 @@
                 <strong>状态</strong>
               </div>
               <div class="status-controls">
+                <span v-if="room.me.crownPrince" class="status-chip crown-status">储君</span>
                 <button
                   type="button"
                   :class="['status-toggle', room.me.chained && 'active']"
@@ -213,8 +217,26 @@
         <div class="random-panel panel">
           <div class="random-row">
             <strong>随机玩家</strong>
-            <input v-model.number="randomPlayerCount" class="field" type="number" min="1" :max="alivePlayers.length || 1" />
+            <input v-model.number="randomPlayerCount" class="field" type="number" min="1" :max="randomPlayerLimit" />
             <button type="button" class="random-button" @click="drawRandomPlayers">抽取</button>
+          </div>
+          <div class="random-scope">
+            <button
+              type="button"
+              :class="['random-scope-button', randomExceptSelfSelected && 'active']"
+              @click="selectRandomPlayersExceptMe"
+            >
+              除自己
+            </button>
+            <button
+              v-for="player in alivePlayers"
+              :key="`random-player-${player.userId}`"
+              type="button"
+              :class="['random-scope-button', isRandomPlayerSelected(player) && 'active']"
+              @click="toggleRandomPlayer(player)"
+            >
+              {{ player.username }}
+            </button>
           </div>
           <div class="random-row range">
             <strong>随机数字</strong>
@@ -224,7 +246,7 @@
             <input v-model.number="randomRangeCount" class="field" type="number" min="1" />
             <button type="button" class="random-button" @click="drawRandomNumbers">抽取</button>
           </div>
-          <p v-if="randomResult" class="random-result">{{ randomResult }}</p>
+          <p v-if="randomResult" :key="randomResultKey" class="random-result">{{ randomResult }}</p>
         </div>
 
         <div class="extra-draw panel">
@@ -279,6 +301,10 @@
           明置武将
         </button>
 
+        <button v-if="room.me.canAppointCrownPrince" class="warm-button crown-button" @click="openCrownPrincePanel">
+          立储
+        </button>
+
         <button class="warm-button danger death-button" :disabled="room.me.dead" @click="markMeDead">
           {{ room.me.dead ? '已阵亡' : '标记阵亡' }}
         </button>
@@ -290,16 +316,32 @@
       </div>
     </div>
 
+    <van-popup v-model:show="crownPanelOpen" position="bottom" round class="crown-popup">
+      <div class="crown-popup-inner">
+        <strong>设置储君标记</strong>
+        <select v-model.number="crownPrinceTargetId" class="field">
+          <option :value="null">选择玩家</option>
+          <option v-for="player in crownPrinceTargets" :key="player.userId" :value="player.userId">
+            {{ player.username }}
+          </option>
+        </select>
+        <button class="warm-button" :disabled="crownPrinceBusy || !crownPrinceTargetId" @click="submitCrownPrince">
+          {{ crownPrinceBusy ? '保存中' : '确认标记' }}
+        </button>
+      </div>
+    </van-popup>
+
     <ImageModal v-model="modalVisible" :image="modalImage" />
   </main>
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { showConfirmDialog, showToast } from 'vant'
+import { Popup as VanPopup, showConfirmDialog, showToast } from 'vant'
 import ImageModal from '../../components/ImageModal.vue'
 import {
+  appointCrownPrince,
   drawExtraGeneral,
   dissolveRoom,
   getRoom,
@@ -342,14 +384,19 @@ const extraBusy = ref(false)
 const vitalsBusy = ref(false)
 const markerBusy = ref(false)
 const statusBusy = ref(false)
+const crownPrinceBusy = ref(false)
 const markerPanelOpen = ref(false)
+const crownPanelOpen = ref(false)
 const modalImage = ref(null)
 const dissolving = ref(false)
 const randomPlayerCount = ref(null)
 const randomRangeStart = ref(null)
 const randomRangeEnd = ref(null)
 const randomRangeCount = ref(null)
+const randomPlayerSelectedIds = ref([])
 const randomResult = ref('')
+const randomResultKey = ref(0)
+const crownPrinceTargetId = ref(null)
 const vitalsForm = reactive({
   currentHp: null,
   maxHp: null,
@@ -367,15 +414,24 @@ const modalVisible = computed({
   }
 })
 
-const otherPlayers = computed(() => room.value?.players?.filter((player) => player.userId !== room.value?.me?.userId) || [])
+const otherPlayers = computed(() => room.value?.players?.filter((player) => !sameUserId(player.userId, room.value?.me?.userId)) || [])
 const allPlayers = computed(() => room.value?.players || [])
 const alivePlayers = computed(() => allPlayers.value.filter((player) => !player.dead))
+const alivePlayersExceptMe = computed(() => alivePlayers.value.filter((player) => !sameUserId(player.userId, room.value?.me?.userId)))
+const randomPlayerPool = computed(() => alivePlayers.value.filter((player) => randomPlayerSelectedIds.value.includes(userIdKey(player.userId))))
+const randomPlayerLimit = computed(() => randomPlayerPool.value.length || 1)
+const randomExceptSelfSelected = computed(() => {
+  const exceptSelfIds = alivePlayersExceptMe.value.map((player) => userIdKey(player.userId))
+  return exceptSelfIds.length > 0 && sameIdSet(randomPlayerSelectedIds.value, exceptSelfIds)
+})
+const crownPrinceTargets = computed(() => alivePlayers.value.filter((player) => !sameUserId(player.userId, room.value?.me?.userId)))
 const myExtraGenerals = computed(() => room.value?.me?.extraGenerals || [])
 const identityShown = computed(() => room.value?.me?.identityVisibleRule || room.value?.me?.identityLeader || holdingIdentity.value)
 const canRevealGeneral = computed(() => Boolean(room.value?.me?.selectedGeneral?.startsHidden && !room.value?.me?.generalRevealed))
 const needsVitalsSetup = computed(() => Boolean(room.value?.me?.selectedGeneral && !hasVitals(room.value.me)))
 
 onMounted(loadRoom)
+watch(alivePlayers, syncRandomPlayerSelection, { immediate: true })
 useRoomSocket(roomCode, loadRoom)
 
 async function loadRoom() {
@@ -453,6 +509,27 @@ async function markMeDead() {
     game.setRoom(data)
   } catch (error) {
     if (error?.message) showToast(error.message)
+  }
+}
+
+function openCrownPrincePanel() {
+  const current = crownPrinceTargets.value.find((player) => player.crownPrince)
+  crownPrinceTargetId.value = current?.userId || crownPrinceTargets.value[0]?.userId || null
+  crownPanelOpen.value = true
+}
+
+async function submitCrownPrince() {
+  if (crownPrinceBusy.value || !crownPrinceTargetId.value) return
+  crownPrinceBusy.value = true
+  try {
+    const data = await appointCrownPrince(roomCode, crownPrinceTargetId.value)
+    game.setRoom(data)
+    crownPanelOpen.value = false
+    showToast('已标记储君')
+  } catch (error) {
+    showToast(error.message)
+  } finally {
+    crownPrinceBusy.value = false
   }
 }
 
@@ -548,7 +625,7 @@ async function saveMarker(payload) {
 }
 
 async function saveMarkerForAllOthers(payload) {
-  const targets = allPlayers.value.filter((player) => player.userId !== room.value?.me?.userId)
+  const targets = allPlayers.value.filter((player) => !sameUserId(player.userId, room.value?.me?.userId))
   if (!targets.length) {
     showToast('没有其他玩家')
     return
@@ -595,16 +672,16 @@ function drawRandomPlayers() {
     showToast('请填写抽取人数')
     return
   }
-  if (!alivePlayers.value.length) {
-    showToast('没有存活玩家')
+  if (!randomPlayerPool.value.length) {
+    showToast('请选择随机范围')
     return
   }
-  if (count > alivePlayers.value.length) {
-    showToast('抽取人数不能超过存活玩家数')
+  if (count > randomPlayerPool.value.length) {
+    showToast('抽取人数不能超过范围人数')
     return
   }
-  const picked = pickRandomItems(alivePlayers.value, count).map((player) => player.username)
-  randomResult.value = `随机玩家：${picked.join('、')}`
+  const picked = pickRandomItems(randomPlayerPool.value, count).map((player) => player.username)
+  showRandomResult(`随机玩家：${picked.join('、')}`)
 }
 
 function drawRandomNumbers() {
@@ -623,7 +700,41 @@ function drawRandomNumbers() {
     return
   }
   const picked = pickRandomItems(numbers, count).sort((left, right) => left - right)
-  randomResult.value = `随机数字：${picked.join('、')}`
+  showRandomResult(`随机数字：${picked.join('、')}`)
+}
+
+function selectRandomPlayersExceptMe() {
+  randomPlayerSelectedIds.value = alivePlayersExceptMe.value.map((player) => userIdKey(player.userId))
+}
+
+function toggleRandomPlayer(player) {
+  const selected = new Set(randomPlayerSelectedIds.value)
+  const playerKey = userIdKey(player.userId)
+  if (selected.has(playerKey)) {
+    selected.delete(playerKey)
+  } else {
+    selected.add(playerKey)
+  }
+  randomPlayerSelectedIds.value = alivePlayers.value
+    .filter((alivePlayer) => selected.has(userIdKey(alivePlayer.userId)))
+    .map((alivePlayer) => userIdKey(alivePlayer.userId))
+}
+
+function isRandomPlayerSelected(player) {
+  return randomPlayerSelectedIds.value.includes(userIdKey(player.userId))
+}
+
+function syncRandomPlayerSelection() {
+  const aliveIds = new Set(alivePlayers.value.map((player) => userIdKey(player.userId)))
+  randomPlayerSelectedIds.value = randomPlayerSelectedIds.value.map(userIdKey).filter((userId) => aliveIds.has(userId))
+  if (!randomPlayerSelectedIds.value.length) {
+    selectRandomPlayersExceptMe()
+  }
+}
+
+function showRandomResult(message) {
+  randomResultKey.value += 1
+  randomResult.value = message
 }
 
 async function revealMyGeneral() {
@@ -779,7 +890,22 @@ function showArmor(player) {
 }
 
 function hasCardStatus(player) {
-  return Boolean(player?.chained || player?.turnedOver || player?.markers?.length)
+  return Boolean(player?.crownPrince || player?.chained || player?.turnedOver || player?.markers?.length)
+}
+
+function sameIdSet(left, right) {
+  if (left.length !== right.length) return false
+  const rightSet = new Set(right.map(userIdKey))
+  return left.every((item) => rightSet.has(userIdKey(item)))
+}
+
+function sameUserId(left, right) {
+  if (left === null || left === undefined || right === null || right === undefined) return false
+  return userIdKey(left) === userIdKey(right)
+}
+
+function userIdKey(value) {
+  return String(value)
 }
 
 function pickRandomItems(items, count) {
@@ -860,9 +986,19 @@ function clamp(value, min, max) {
   cursor: default;
 }
 
-.battle-main strong {
-  display: block;
+.battle-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
   font-size: 18px;
+}
+
+.battle-name span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .battle-main p {
@@ -986,6 +1122,12 @@ function clamp(value, min, max) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.status-chip.crown-status {
+  border-color: #d5a84b;
+  background: #fff0b8;
+  color: #8a4b10;
 }
 
 .card-marker-chip {
@@ -1207,6 +1349,21 @@ function clamp(value, min, max) {
   min-height: 40px;
 }
 
+.crown-popup {
+  background: var(--warm-bg);
+}
+
+.crown-popup-inner {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.crown-popup-inner strong {
+  color: var(--warm-primary-strong);
+  font-size: 18px;
+}
+
 .marker-cancel {
   border: 1px solid #d8ba86;
   border-radius: 8px;
@@ -1231,6 +1388,31 @@ function clamp(value, min, max) {
 
 .random-row.range {
   grid-template-columns: 74px minmax(0, 1fr) 12px minmax(0, 1fr) minmax(0, 1fr) 72px;
+}
+
+.random-scope {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+
+.random-scope-button {
+  min-height: 30px;
+  max-width: 100%;
+  border: 1px solid #d8ba86;
+  border-radius: 8px;
+  padding: 0 8px;
+  background: #fffaf1;
+  color: var(--warm-muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.random-scope-button.active {
+  border-color: #d39142;
+  background: #ffe1ad;
+  color: var(--warm-primary-strong);
 }
 
 .random-row strong {
@@ -1270,6 +1452,18 @@ function clamp(value, min, max) {
   font-size: 14px;
   font-weight: 900;
   line-height: 1.4;
+  animation: random-result-pop 0.22s ease;
+}
+
+@keyframes random-result-pop {
+  from {
+    transform: translateY(3px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
 .me-zone {
@@ -1570,7 +1764,8 @@ function clamp(value, min, max) {
   width: 100%;
 }
 
-.reveal-button {
+.reveal-button,
+.crown-button {
   grid-column: 1 / -1;
   width: 100%;
 }

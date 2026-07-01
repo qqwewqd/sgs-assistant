@@ -4,6 +4,7 @@ import com.sanguosha.assistant.entity.General;
 import com.sanguosha.assistant.entity.IdentityMode;
 import com.sanguosha.assistant.entity.IdentityModeRule;
 import com.sanguosha.assistant.security.AuthUser;
+import com.sanguosha.assistant.service.AppSettingService;
 import com.sanguosha.assistant.service.GameRoomService;
 import com.sanguosha.assistant.service.GeneralService;
 import com.sanguosha.assistant.service.IdentityModeService;
@@ -31,12 +32,15 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class GameRoomServiceImpl implements GameRoomService {
     private static final String IDENTITY_LORD = "主公";
+    private static final String IDENTITY_LOYALIST = "忠臣";
 
     private record IdentityAssignment(
             String name,
             boolean leader,
             boolean visible,
             boolean allowLordGeneral,
+            boolean sameIdentityGeneralVisible,
+            int generalPoolSize,
             int initialHpBonus,
             int maxHpBonus
     ) {
@@ -45,6 +49,7 @@ public class GameRoomServiceImpl implements GameRoomService {
     private final LocalRoomStore roomStore;
     private final GeneralService generalService;
     private final IdentityModeService identityModeService;
+    private final AppSettingService appSettingService;
     private final RoomSessionManager roomSessionManager;
     private final SecureRandom random = new SecureRandom();
 
@@ -108,17 +113,21 @@ public class GameRoomServiceImpl implements GameRoomService {
             throw new AppException("有玩家离线，不能开始发牌");
         }
 
-        List<General> generals = new ArrayList<>(generalService.allGenerals());
-        if (generals.size() < playerCount * 6) {
-            throw new AppException("武将数量不足，需要至少 " + (playerCount * 6) + " 张");
-        }
-        Collections.shuffle(generals, random);
-
         List<IdentityAssignment> identities = new ArrayList<>(identityAssignments(room, playerCount));
         Collections.shuffle(identities, random);
+        int requiredGeneralCount = identities.stream().mapToInt(IdentityAssignment::generalPoolSize).sum();
+        List<General> generals = new ArrayList<>(generalService.allGenerals());
+        if (generals.size() < requiredGeneralCount) {
+            throw new AppException("武将数量不足，需要至少 " + requiredGeneralCount + " 张");
+        }
+        Collections.shuffle(generals, random);
+        int generalCursor = 0;
+        room.setCrownPrinceUserId(null);
+        room.setCrownPrinceAppointed(false);
         for (int i = 0; i < playerCount; i++) {
             PlayerState player = room.getPlayers().get(i);
-            applyIdentity(player, identities.get(i));
+            IdentityAssignment identity = identities.get(i);
+            applyIdentity(player, identity);
             player.setLocked(false);
             player.setDead(false);
             player.setGeneralRevealed(false);
@@ -127,7 +136,9 @@ public class GameRoomServiceImpl implements GameRoomService {
             clearCardStatus(player);
             player.setSelectedGeneral(null);
             player.setExtraGenerals(new ArrayList<>());
-            player.setGeneralPool(new ArrayList<>(generals.subList(i * 6, i * 6 + 6).stream().map(this::toCard).toList()));
+            int poolEnd = generalCursor + identity.generalPoolSize();
+            player.setGeneralPool(new ArrayList<>(generals.subList(generalCursor, poolEnd).stream().map(this::toCard).toList()));
+            generalCursor = poolEnd;
         }
         room.setStatus(RoomState.SELECTING);
         saveRoom(room, true);
@@ -153,6 +164,14 @@ public class GameRoomServiceImpl implements GameRoomService {
             Set<Long> usedByOthers = usedGeneralIds(room, player.getUserId());
             if (usedByOthers.contains(generalId)) {
                 throw new AppException("该武将已进入其他玩家盲选池，不能重复选择");
+            }
+            selected = toCard(general);
+        }
+        if (selected == null && appSettingService.isManualPickEnabled()) {
+            ensureManualPickAllowed(room, player);
+            General general = generalService.requireGeneral(generalId);
+            if (manualPickUnavailableIds(room, player.getUserId()).contains(generalId)) {
+                throw new AppException("该武将已在场上或盲选池中，不能重复选择");
             }
             selected = toCard(general);
         }
@@ -261,7 +280,11 @@ public class GameRoomServiceImpl implements GameRoomService {
             throw new AppException(ResultCode.FORBIDDEN);
         }
         PlayerState target = requirePlayer(room, actualTarget);
+        boolean newlyDead = !target.isDead();
         target.setDead(true);
+        if (newlyDead) {
+            handleCrownPrinceDeath(room, target);
+        }
         saveRoom(room, true);
         return toView(room, user.getId());
     }
@@ -341,6 +364,35 @@ public class GameRoomServiceImpl implements GameRoomService {
     }
 
     @Override
+    public synchronized RoomView appointCrownPrince(String roomCode, Long targetUserId, AuthUser user) {
+        RoomState room = requireRoom(roomCode);
+        PlayerState leader = requirePlayer(room, user.getId());
+        if (!RoomState.PLAYING.equals(room.getStatus())) {
+            throw new AppException("当前不是对局阶段");
+        }
+        if (!appSettingService.isCrownPrinceEnabled()) {
+            throw new AppException("主公立储功能未开启");
+        }
+        if (!isLeaderIdentity(leader) || leader.isDead()) {
+            throw new AppException("只有存活主身份玩家可以立储");
+        }
+        if (room.isCrownPrinceAppointed() || room.getCrownPrinceUserId() != null) {
+            throw new AppException("本局已经立过储君");
+        }
+        PlayerState target = requirePlayer(room, targetUserId);
+        if (target.getUserId().equals(leader.getUserId())) {
+            throw new AppException("不能立自己为储君");
+        }
+        if (target.isDead()) {
+            throw new AppException("不能立阵亡玩家为储君");
+        }
+        room.setCrownPrinceUserId(target.getUserId());
+        room.setCrownPrinceAppointed(true);
+        saveRoom(room, true);
+        return toView(room, user.getId());
+    }
+
+    @Override
     public synchronized RoomView restart(String roomCode, AuthUser user) {
         RoomState room = requireRoom(roomCode);
         ensureOwner(room, user);
@@ -356,6 +408,8 @@ public class GameRoomServiceImpl implements GameRoomService {
             player.setExtraGenerals(new ArrayList<>());
             player.setGeneralPool(new ArrayList<>());
         }
+        room.setCrownPrinceUserId(null);
+        room.setCrownPrinceAppointed(false);
         room.setStatus(RoomState.WAITING);
         saveRoom(room, true);
         return toView(room, user.getId());
@@ -407,6 +461,21 @@ public class GameRoomServiceImpl implements GameRoomService {
         return generalService.listLordCards(keyword).stream()
                 .filter(card -> !dealtGeneralIds.contains(card.getId()))
                 .filter(card -> !usedByOthers.contains(card.getId()))
+                .toList();
+    }
+
+    @Override
+    public List<RoomView.GeneralCard> manualPickGenerals(String roomCode, String keyword, AuthUser user) {
+        RoomState room = requireRoom(roomCode);
+        PlayerState player = requirePlayer(room, user.getId());
+        ensureManualPickAllowed(room, player);
+        String normalizedKeyword = normalizeSearchKeyword(keyword);
+        Set<Long> unavailableIds = manualPickUnavailableIds(room, player.getUserId());
+        return generalService.allGenerals().stream()
+                .filter(general -> !unavailableIds.contains(general.getId()))
+                .filter(general -> normalizedKeyword == null || general.getName().toLowerCase(Locale.ROOT).contains(normalizedKeyword))
+                .limit(50)
+                .map(this::toCard)
                 .toList();
     }
 
@@ -513,6 +582,8 @@ public class GameRoomServiceImpl implements GameRoomService {
                         Boolean.TRUE.equals(rule.getIsLeader()),
                         Boolean.TRUE.equals(rule.getIdentityVisible()),
                         Boolean.TRUE.equals(rule.getAllowLordGeneral()),
+                        Boolean.TRUE.equals(rule.getSameIdentityGeneralVisible()),
+                        generalPoolSize(rule.getGeneralPoolSize()),
                         valueOrZero(rule.getInitialHpBonus()),
                         valueOrZero(rule.getMaxHpBonus())
                 ));
@@ -521,11 +592,16 @@ public class GameRoomServiceImpl implements GameRoomService {
         return identities;
     }
 
+    private int generalPoolSize(Integer value) {
+        return value == null || value < 1 ? 2 : value;
+    }
+
     private void applyIdentity(PlayerState player, IdentityAssignment identity) {
         player.setIdentity(identity.name());
         player.setIdentityLeader(identity.leader());
         player.setIdentityVisibleRule(identity.visible());
         player.setAllowLordGeneral(identity.allowLordGeneral());
+        player.setSameIdentityGeneralVisible(identity.sameIdentityGeneralVisible());
         player.setInitialHpBonus(identity.initialHpBonus());
         player.setMaxHpBonus(identity.maxHpBonus());
     }
@@ -535,6 +611,7 @@ public class GameRoomServiceImpl implements GameRoomService {
         player.setIdentityLeader(false);
         player.setIdentityVisibleRule(false);
         player.setAllowLordGeneral(false);
+        player.setSameIdentityGeneralVisible(false);
         player.setInitialHpBonus(0);
         player.setMaxHpBonus(0);
     }
@@ -564,6 +641,117 @@ public class GameRoomServiceImpl implements GameRoomService {
 
     private boolean canUseLordGeneral(PlayerState player) {
         return player != null && (player.isAllowLordGeneral() || usesLegacyLordRule(player));
+    }
+
+    private boolean canSeeSameIdentityGeneral(PlayerState viewer, PlayerState target) {
+        return viewer != null
+                && target != null
+                && !viewer.getUserId().equals(target.getUserId())
+                && viewer.isSameIdentityGeneralVisible()
+                && viewer.getIdentity() != null
+                && viewer.getIdentity().equals(target.getIdentity())
+                && (target.getSelectedGeneral() != null || target.getGeneralPool() != null && !target.getGeneralPool().isEmpty());
+    }
+
+    private boolean canManualPick(RoomState room, PlayerState player) {
+        return room != null
+                && RoomState.SELECTING.equals(room.getStatus())
+                && player != null
+                && !player.isLocked()
+                && !isLeaderIdentity(player)
+                && appSettingService.isManualPickEnabled();
+    }
+
+    private boolean canAppointCrownPrince(RoomState room, PlayerState player) {
+        return room != null
+                && RoomState.PLAYING.equals(room.getStatus())
+                && player != null
+                && !player.isDead()
+                && !room.isCrownPrinceAppointed()
+                && room.getCrownPrinceUserId() == null
+                && !hasFormerDeadLeader(room)
+                && isLeaderIdentity(player)
+                && appSettingService.isCrownPrinceEnabled();
+    }
+
+    private boolean hasFormerDeadLeader(RoomState room) {
+        return room.getPlayers().stream()
+                .anyMatch(player -> player.isDead()
+                        && IDENTITY_LORD.equals(player.getIdentity())
+                        && !player.isIdentityLeader());
+    }
+
+    private void handleCrownPrinceDeath(RoomState room, PlayerState target) {
+        if (!appSettingService.isCrownPrinceEnabled() || room.getCrownPrinceUserId() == null) {
+            return;
+        }
+        room.setCrownPrinceAppointed(true);
+        if (isLeaderIdentity(target)) {
+            resolveLeaderDeath(room, target);
+            return;
+        }
+        if (target.getUserId().equals(room.getCrownPrinceUserId())) {
+            PlayerState leader = findAliveLeader(room);
+            if (leader != null) {
+                reduceCurrentHp(leader, 1);
+            }
+            room.setCrownPrinceUserId(null);
+        }
+    }
+
+    private void resolveLeaderDeath(RoomState room, PlayerState deadLeader) {
+        PlayerState successor = findPlayer(room, room.getCrownPrinceUserId());
+        if (successor != null && !successor.isDead() && IDENTITY_LOYALIST.equals(successor.getIdentity())) {
+            promoteToLeader(deadLeader, successor);
+        }
+        room.setCrownPrinceUserId(null);
+    }
+
+    private void promoteToLeader(PlayerState deadLeader, PlayerState successor) {
+        deadLeader.setIdentityLeader(false);
+        deadLeader.setAllowLordGeneral(false);
+        successor.setIdentity(IDENTITY_LORD);
+        successor.setIdentityLeader(true);
+        successor.setIdentityVisibleRule(true);
+        successor.setAllowLordGeneral(true);
+        successor.setSameIdentityGeneralVisible(false);
+        successor.setInitialHpBonus(valueOrZero(successor.getInitialHpBonus()) + 1);
+        successor.setMaxHpBonus(valueOrZero(successor.getMaxHpBonus()) + 1);
+        if (successor.getMaxHp() != null) {
+            successor.setMaxHp(successor.getMaxHp() + 1);
+        }
+        if (successor.getCurrentHp() != null) {
+            successor.setCurrentHp(successor.getCurrentHp() + 1);
+        }
+    }
+
+    private PlayerState findAliveLeader(RoomState room) {
+        return room.getPlayers().stream()
+                .filter(player -> !player.isDead())
+                .filter(this::isLeaderIdentity)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private void reduceCurrentHp(PlayerState player, int amount) {
+        if (player.getCurrentHp() != null) {
+            player.setCurrentHp(Math.max(0, player.getCurrentHp() - amount));
+        }
+    }
+
+    private void ensureManualPickAllowed(RoomState room, PlayerState player) {
+        if (!RoomState.SELECTING.equals(room.getStatus())) {
+            throw new AppException("当前不是选将阶段");
+        }
+        if (player.isLocked()) {
+            throw new AppException("已经锁定出阵，不能点将");
+        }
+        if (!appSettingService.isManualPickEnabled()) {
+            throw new AppException("点将功能未开启");
+        }
+        if (isLeaderIdentity(player)) {
+            throw new AppException("主身份玩家不能使用点将");
+        }
     }
 
     private boolean isIdentityPublic(PlayerState player) {
@@ -785,6 +973,12 @@ public class GameRoomServiceImpl implements GameRoomService {
         return ids;
     }
 
+    private Set<Long> manualPickUnavailableIds(RoomState room, Long exceptUserId) {
+        Set<Long> ids = dealtGeneralIds(room);
+        ids.addAll(usedGeneralIds(room, exceptUserId));
+        return ids;
+    }
+
     private void addExtraGeneralIds(Set<Long> ids, PlayerState player) {
         if (player.getExtraGenerals() == null) {
             player.setExtraGenerals(new ArrayList<>());
@@ -814,6 +1008,13 @@ public class GameRoomServiceImpl implements GameRoomService {
         return faction.trim().toUpperCase(Locale.ROOT);
     }
 
+    private String normalizeSearchKeyword(String keyword) {
+        if (keyword == null || keyword.trim().isBlank()) {
+            return null;
+        }
+        return keyword.trim().toLowerCase(Locale.ROOT);
+    }
+
     private Set<Long> dealtGeneralIds(RoomState room) {
         Set<Long> ids = new HashSet<>();
         for (PlayerState player : room.getPlayers()) {
@@ -838,6 +1039,10 @@ public class GameRoomServiceImpl implements GameRoomService {
                 && room.getPlayers().size() >= 2
                 && allPlayersOnline(room));
         view.setCanRestart(viewer != null && viewer.isOwner());
+        view.setManualPickEnabled(appSettingService.isManualPickEnabled());
+        boolean crownPrinceEnabled = appSettingService.isCrownPrinceEnabled();
+        view.setCrownPrinceEnabled(crownPrinceEnabled);
+        view.setCrownPrinceUserId(crownPrinceEnabled ? room.getCrownPrinceUserId() : null);
         view.setUpdatedAt(room.getUpdatedAt());
 
         for (PlayerState player : room.getPlayers()) {
@@ -848,6 +1053,7 @@ public class GameRoomServiceImpl implements GameRoomService {
             playerView.setOnline(player.isOnline());
             playerView.setLocked(player.isLocked());
             playerView.setDead(player.isDead());
+            playerView.setCrownPrince(crownPrinceEnabled && player.getUserId().equals(room.getCrownPrinceUserId()));
             playerView.setGeneralRevealed(player.isGeneralRevealed());
             playerView.setChained(player.isChained());
             playerView.setTurnedOver(player.isTurnedOver());
@@ -865,11 +1071,15 @@ public class GameRoomServiceImpl implements GameRoomService {
             boolean publicGeneralVisible = player.isLocked()
                     && (isLeaderIdentity(player) || RoomState.PLAYING.equals(room.getStatus()))
                     && (!startsHidden(player.getSelectedGeneral()) || player.isGeneralRevealed());
-            boolean generalVisible = player.getUserId().equals(viewerId) || publicGeneralVisible;
+            boolean sameIdentityGeneralVisible = canSeeSameIdentityGeneral(viewer, player);
+            boolean generalVisible = player.getUserId().equals(viewerId) || publicGeneralVisible || sameIdentityGeneralVisible;
             playerView.setIdentityVisible(identityVisible);
             playerView.setIdentity(identityVisible ? player.getIdentity() : null);
             playerView.setGeneralVisible(generalVisible);
             playerView.setSelectedGeneral(generalVisible ? copyCard(player.getSelectedGeneral()) : null);
+            if (sameIdentityGeneralVisible && player.getGeneralPool() != null) {
+                playerView.setGeneralPool(player.getGeneralPool().stream().map(this::copyCard).toList());
+            }
             if (player.getExtraGenerals() == null) {
                 player.setExtraGenerals(new ArrayList<>());
             }
@@ -887,12 +1097,15 @@ public class GameRoomServiceImpl implements GameRoomService {
             me.setIdentity(viewer.getIdentity());
             me.setLocked(viewer.isLocked());
             me.setDead(viewer.isDead());
+            me.setCrownPrince(crownPrinceEnabled && viewer.getUserId().equals(room.getCrownPrinceUserId()));
             me.setGeneralRevealed(viewer.isGeneralRevealed());
             me.setChained(viewer.isChained());
             me.setTurnedOver(viewer.isTurnedOver());
             me.setIdentityLeader(isLeaderIdentity(viewer));
             me.setIdentityVisibleRule(isIdentityPublic(viewer));
             me.setAllowLordGeneral(canUseLordGeneral(viewer));
+            me.setCanManualPick(canManualPick(room, viewer));
+            me.setCanAppointCrownPrince(canAppointCrownPrince(room, viewer));
             me.setInitialHpBonus(initialHpBonus(viewer));
             me.setMaxHpBonus(maxHpBonus(viewer));
             me.setCurrentHp(viewer.getCurrentHp());

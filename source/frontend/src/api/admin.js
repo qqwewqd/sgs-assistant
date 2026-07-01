@@ -16,3 +16,6 @@ export const deleteIdentityMode = (id) => request.delete(`/admin/identity-modes/
 
 export const listRooms = (params) => request.get('/admin/rooms', { params })
 export const dissolveRoom = (roomCode) => request.delete(`/admin/rooms/${roomCode}`)
+
+export const getSettings = () => request.get('/admin/settings')
+export const updateSettings = (payload) => request.put('/admin/settings', payload)

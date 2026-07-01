@@ -39,9 +39,11 @@ CREATE TABLE IF NOT EXISTS identity_mode_rules (
     player_count INT NOT NULL,
     identity_name VARCHAR(20) NOT NULL,
     quantity INT NOT NULL DEFAULT 1,
+    general_pool_size INT NOT NULL DEFAULT 2,
     is_leader TINYINT(1) NOT NULL DEFAULT 0,
     identity_visible TINYINT(1) NOT NULL DEFAULT 0,
     allow_lord_general TINYINT(1) NOT NULL DEFAULT 0,
+    same_identity_general_visible TINYINT(1) NOT NULL DEFAULT 0,
     initial_hp_bonus INT NOT NULL DEFAULT 0,
     max_hp_bonus INT NOT NULL DEFAULT 0,
     sort_order INT NOT NULL DEFAULT 0,
@@ -51,6 +53,18 @@ CREATE TABLE IF NOT EXISTS identity_mode_rules (
     KEY idx_identity_mode_rules_mode_count (mode_id, player_count),
     CONSTRAINT fk_identity_mode_rules_mode FOREIGN KEY (mode_id) REFERENCES identity_modes(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS app_settings (
+    setting_key VARCHAR(64) PRIMARY KEY,
+    setting_value VARCHAR(255) NOT NULL,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value)
+VALUES ('manual_pick_enabled', 'false');
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value)
+VALUES ('crown_prince_enabled', 'false');
 
 SET @add_starts_hidden_column := (
     SELECT IF(
@@ -141,6 +155,36 @@ SET @add_max_armor_column := (
 PREPARE add_max_armor_stmt FROM @add_max_armor_column;
 EXECUTE add_max_armor_stmt;
 DEALLOCATE PREPARE add_max_armor_stmt;
+
+SET @add_same_identity_general_visible_column := (
+    SELECT IF(
+        COUNT(*) = 0,
+        'ALTER TABLE identity_mode_rules ADD COLUMN same_identity_general_visible TINYINT(1) NOT NULL DEFAULT 0 AFTER allow_lord_general',
+        'SELECT ''same_identity_general_visible already exists'''
+    )
+    FROM information_schema.columns
+    WHERE table_schema = DATABASE()
+      AND table_name = 'identity_mode_rules'
+      AND column_name = 'same_identity_general_visible'
+);
+PREPARE add_same_identity_general_visible_stmt FROM @add_same_identity_general_visible_column;
+EXECUTE add_same_identity_general_visible_stmt;
+DEALLOCATE PREPARE add_same_identity_general_visible_stmt;
+
+SET @add_general_pool_size_column := (
+    SELECT IF(
+        COUNT(*) = 0,
+        'ALTER TABLE identity_mode_rules ADD COLUMN general_pool_size INT NOT NULL DEFAULT 2 AFTER quantity',
+        'SELECT ''general_pool_size already exists'''
+    )
+    FROM information_schema.columns
+    WHERE table_schema = DATABASE()
+      AND table_name = 'identity_mode_rules'
+      AND column_name = 'general_pool_size'
+);
+PREPARE add_general_pool_size_stmt FROM @add_general_pool_size_column;
+EXECUTE add_general_pool_size_stmt;
+DEALLOCATE PREPARE add_general_pool_size_stmt;
 
 SET @drop_generals_name_unique := (
     SELECT IF(

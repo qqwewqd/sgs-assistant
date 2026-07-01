@@ -31,6 +31,8 @@ public class IdentityModeServiceImpl implements IdentityModeService {
     private static final int MIN_PLAYER_COUNT = 2;
     private static final int MAX_PLAYER_COUNT = 10;
     private static final int MAX_RULE_BONUS = 20;
+    private static final int DEFAULT_GENERAL_POOL_SIZE = 2;
+    private static final int MAX_GENERAL_POOL_SIZE = 20;
 
     private final IdentityModeMapper identityModeMapper;
     private final IdentityModeRuleMapper identityModeRuleMapper;
@@ -197,15 +199,18 @@ public class IdentityModeServiceImpl implements IdentityModeService {
         int playerCount = normalizeRange(rule.getPlayerCount(), MIN_PLAYER_COUNT, MAX_PLAYER_COUNT, "玩家数");
         int quantity = normalizeRange(rule.getQuantity(), 1, MAX_PLAYER_COUNT, "身份数量");
         String identityName = normalizeIdentityName(rule.getIdentityName());
+        int generalPoolSize = normalizeRange(rule.getGeneralPoolSize() == null ? DEFAULT_GENERAL_POOL_SIZE : rule.getGeneralPoolSize(), 1, MAX_GENERAL_POOL_SIZE, "发将数");
         int initialHpBonus = normalizeRange(rule.getInitialHpBonus() == null ? 0 : rule.getInitialHpBonus(), -MAX_RULE_BONUS, MAX_RULE_BONUS, "初始血加成");
         int maxHpBonus = normalizeRange(rule.getMaxHpBonus() == null ? 0 : rule.getMaxHpBonus(), -MAX_RULE_BONUS, MAX_RULE_BONUS, "上限加成");
         IdentityModeRuleRequest copy = new IdentityModeRuleRequest();
         copy.setPlayerCount(playerCount);
         copy.setIdentityName(identityName);
         copy.setQuantity(quantity);
+        copy.setGeneralPoolSize(generalPoolSize);
         copy.setIsLeader(Boolean.TRUE.equals(rule.getIsLeader()));
         copy.setIdentityVisible(Boolean.TRUE.equals(rule.getIdentityVisible()));
         copy.setAllowLordGeneral(Boolean.TRUE.equals(rule.getAllowLordGeneral()));
+        copy.setSameIdentityGeneralVisible(Boolean.TRUE.equals(rule.getSameIdentityGeneralVisible()));
         copy.setInitialHpBonus(initialHpBonus);
         copy.setMaxHpBonus(maxHpBonus);
         copy.setSortOrder(rule.getSortOrder() == null ? 0 : rule.getSortOrder());
@@ -238,9 +243,11 @@ public class IdentityModeServiceImpl implements IdentityModeService {
             entity.setPlayerCount(rule.getPlayerCount());
             entity.setIdentityName(rule.getIdentityName());
             entity.setQuantity(rule.getQuantity());
+            entity.setGeneralPoolSize(rule.getGeneralPoolSize());
             entity.setIsLeader(Boolean.TRUE.equals(rule.getIsLeader()));
             entity.setIdentityVisible(Boolean.TRUE.equals(rule.getIdentityVisible()));
             entity.setAllowLordGeneral(Boolean.TRUE.equals(rule.getAllowLordGeneral()));
+            entity.setSameIdentityGeneralVisible(Boolean.TRUE.equals(rule.getSameIdentityGeneralVisible()));
             entity.setInitialHpBonus(rule.getInitialHpBonus());
             entity.setMaxHpBonus(rule.getMaxHpBonus());
             entity.setSortOrder(rule.getSortOrder() == null ? index : rule.getSortOrder());

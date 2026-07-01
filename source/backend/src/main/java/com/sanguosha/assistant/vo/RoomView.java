@@ -15,6 +15,9 @@ public class RoomView {
     private boolean owner;
     private boolean canStart;
     private boolean canRestart;
+    private boolean manualPickEnabled;
+    private boolean crownPrinceEnabled;
+    private Long crownPrinceUserId;
     private Instant updatedAt;
     private List<PlayerView> players = new ArrayList<>();
     private MeView me;
@@ -27,6 +30,7 @@ public class RoomView {
         private boolean online;
         private boolean locked;
         private boolean dead;
+        private boolean crownPrince;
         private boolean generalRevealed;
         private boolean chained;
         private boolean turnedOver;
@@ -39,6 +43,7 @@ public class RoomView {
         private Integer maxArmor;
         private boolean identityVisible;
         private GeneralCard selectedGeneral;
+        private List<GeneralCard> generalPool = new ArrayList<>();
         private List<MarkerView> markers = new ArrayList<>();
         private List<ExtraGeneralCard> extraGenerals = new ArrayList<>();
         private boolean generalVisible;
@@ -51,12 +56,15 @@ public class RoomView {
         private String identity;
         private boolean locked;
         private boolean dead;
+        private boolean crownPrince;
         private boolean generalRevealed;
         private boolean chained;
         private boolean turnedOver;
         private boolean identityLeader;
         private boolean identityVisibleRule;
         private boolean allowLordGeneral;
+        private boolean canManualPick;
+        private boolean canAppointCrownPrince;
         private Integer initialHpBonus;
         private Integer maxHpBonus;
         private Integer currentHp;

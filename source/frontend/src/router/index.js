@@ -11,6 +11,7 @@ const GeneralAdmin = () => import('../views/admin/General.vue')
 const IdentityModeAdmin = () => import('../views/admin/IdentityMode.vue')
 const UserAdmin = () => import('../views/admin/User.vue')
 const RoomAdmin = () => import('../views/admin/Rooms.vue')
+const SettingsAdmin = () => import('../views/admin/Settings.vue')
 
 const router = createRouter({
   history: createWebHistory(),
@@ -39,6 +40,7 @@ const router = createRouter({
         { path: 'rooms', component: RoomAdmin },
         { path: 'identity-modes', component: IdentityModeAdmin },
         { path: 'generals', component: GeneralAdmin },
+        { path: 'settings', component: SettingsAdmin },
         { path: 'users', component: UserAdmin }
       ]
     }
