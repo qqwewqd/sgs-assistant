@@ -16,9 +16,11 @@ public class RoomView {
     private boolean canStart;
     private boolean canRestart;
     private boolean manualPickEnabled;
+    private boolean generalSwapEnabled;
     private boolean crownPrinceEnabled;
     private Long crownPrinceUserId;
     private Instant updatedAt;
+    private RandomNotice randomNotice;
     private List<PlayerView> players = new ArrayList<>();
     private MeView me;
 
@@ -37,12 +39,14 @@ public class RoomView {
         private String identity;
         private boolean identityLeader;
         private boolean allowLordGeneral;
+        private int generalSelectCount;
         private Integer currentHp;
         private Integer maxHp;
         private Integer currentArmor;
         private Integer maxArmor;
         private boolean identityVisible;
         private GeneralCard selectedGeneral;
+        private List<GeneralCard> secondaryGenerals = new ArrayList<>();
         private List<GeneralCard> generalPool = new ArrayList<>();
         private List<MarkerView> markers = new ArrayList<>();
         private List<ExtraGeneralCard> extraGenerals = new ArrayList<>();
@@ -64,6 +68,8 @@ public class RoomView {
         private boolean identityVisibleRule;
         private boolean allowLordGeneral;
         private boolean canManualPick;
+        private boolean canSwapGeneral;
+        private int generalSelectCount;
         private boolean canAppointCrownPrince;
         private Integer initialHpBonus;
         private Integer maxHpBonus;
@@ -72,9 +78,11 @@ public class RoomView {
         private Integer currentArmor;
         private Integer maxArmor;
         private GeneralCard selectedGeneral;
+        private List<GeneralCard> secondaryGenerals = new ArrayList<>();
         private List<MarkerView> markers = new ArrayList<>();
         private List<ExtraGeneralCard> extraGenerals = new ArrayList<>();
         private List<GeneralCard> generalPool = new ArrayList<>();
+        private List<Integer> swappedGeneralPoolIndexes = new ArrayList<>();
     }
 
     @Data
@@ -97,11 +105,21 @@ public class RoomView {
         private String name;
         private String imagePath;
         private String faction;
+        private Boolean isLord;
+        private Boolean startsHidden;
         private Integer initialHp;
         private Integer maxHp;
         private Integer initialArmor;
         private Integer maxArmor;
         private boolean revealed;
+    }
+
+    @Data
+    public static class RandomNotice {
+        private String id;
+        private String actorUsername;
+        private String message;
+        private Instant expiresAt;
     }
 
     @Data

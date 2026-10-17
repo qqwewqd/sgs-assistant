@@ -10,8 +10,8 @@ spring:
     driver-class-name: org.h2.Driver
   servlet:
     multipart:
-      max-file-size: 1MB
-      max-request-size: 2MB
+      max-file-size: ${SGS_IMPORT_MAX_FILE_SIZE:600MB}
+      max-request-size: ${SGS_IMPORT_MAX_REQUEST_SIZE:600MB}
   sql:
     init:
       mode: ${SGS_SQL_INIT_MODE:always}
@@ -42,6 +42,10 @@ sgs:
     allowed-origin-patterns: ${SGS_CORS_ALLOWED_ORIGINS:http://localhost:*,http://127.0.0.1:*,http://192.168.*:*,http://10.*:*,http://172.16.*:*,http://172.17.*:*,http://172.18.*:*,http://172.19.*:*,http://172.20.*:*,http://172.21.*:*,http://172.22.*:*,http://172.23.*:*,http://172.24.*:*,http://172.25.*:*,http://172.26.*:*,http://172.27.*:*,http://172.28.*:*,http://172.29.*:*,http://172.30.*:*,http://172.31.*:*}
   upload:
     dir: ${SGS_UPLOAD_DIR:./upload}
+  shared-hall:
+    verification-url: ${SGS_SHARED_HALL_VERIFICATION_URL:https://sgs.tizonic.com/api/public/shared-packages/verification}
+    browse-url: ${SGS_SHARED_HALL_BROWSE_URL:https://sgs.tizonic.com/api/public/shared-packages}
+    submit-url: ${SGS_SHARED_HALL_SUBMIT_URL:https://sgs.tizonic.com/api/public/shared-packages/submissions}
   room:
     ttl-hours: ${SGS_ROOM_TTL_HOURS:6}
   bootstrap:

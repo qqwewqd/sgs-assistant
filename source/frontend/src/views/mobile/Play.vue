@@ -14,17 +14,33 @@
           :key="player.userId"
           :class="['battle-row panel', player.dead && 'dead']"
         >
-          <button
-            type="button"
-            class="battle-main"
-            :disabled="!player.selectedGeneral"
-            @click="openImage(player.selectedGeneral)"
-          >
+          <div class="battle-main">
             <strong class="battle-name">
               <span>{{ player.username }}</span>
             </strong>
-            <p>{{ player.selectedGeneral?.name || (player.generalVisible ? '未选择' : '武将暗置') }}</p>
-          </button>
+            <div v-if="player.selectedGeneral || player.secondaryGenerals?.length" class="battle-general-list">
+              <button
+                v-if="player.selectedGeneral"
+                type="button"
+                class="battle-general-button"
+                :disabled="!player.selectedGeneral.imagePath"
+                @click="openImage(player.selectedGeneral)"
+              >
+                {{ player.selectedGeneral.name }}
+              </button>
+              <button
+                v-for="(general, index) in player.secondaryGenerals || []"
+                :key="`${player.userId}-secondary-${general.id || index}`"
+                type="button"
+                class="battle-general-button"
+                :disabled="!general.imagePath"
+                @click="openImage(general)"
+              >
+                {{ general.name || '武将暗置' }}
+              </button>
+            </div>
+            <p v-else>{{ player.generalVisible ? '未选择' : '武将暗置' }}</p>
+          </div>
           <div class="battle-vitals">
             <div class="mini-hp">
               <template v-if="showHpIcons(player)">
@@ -84,10 +100,20 @@
           {{ identityShown ? room.me.identity : '按住看身份' }}
         </div>
 
-        <button class="my-general panel" @click="openImage(room.me.selectedGeneral)">
-          <img v-if="room.me.selectedGeneral" :src="assetUrl(room.me.selectedGeneral.imagePath)" :alt="room.me.selectedGeneral.name" />
-          <span>{{ room.me.selectedGeneral?.name || '我的武将' }}</span>
-        </button>
+        <div class="my-generals">
+          <button
+            v-for="(general, index) in mySelectedGenerals"
+            :key="`my-general-${general.id || index}`"
+            type="button"
+            class="my-general panel"
+            :disabled="!general.imagePath"
+            @click="openImage(general)"
+          >
+            <img v-if="general.imagePath" :src="assetUrl(general.imagePath)" :alt="general.name" />
+            <span>{{ general.name || '我的武将' }}</span>
+          </button>
+          <span v-if="!mySelectedGenerals.length" class="my-general panel">我的武将</span>
+        </div>
 
         <div v-if="needsVitalsSetup" class="vitals-setup panel">
           <strong>设置本局血甲</strong>
@@ -218,7 +244,7 @@
           <div class="random-row">
             <strong>随机玩家</strong>
             <input v-model.number="randomPlayerCount" class="field" type="number" min="1" :max="randomPlayerLimit" />
-            <button type="button" class="random-button" @click="drawRandomPlayers">抽取</button>
+            <button type="button" class="random-button" :disabled="randomNoticeBusy" @click="drawRandomPlayers">抽取</button>
           </div>
           <div class="random-scope">
             <button
@@ -244,20 +270,36 @@
             <span>-</span>
             <input v-model.number="randomRangeEnd" class="field" type="number" />
             <input v-model.number="randomRangeCount" class="field" type="number" min="1" />
-            <button type="button" class="random-button" @click="drawRandomNumbers">抽取</button>
+            <button type="button" class="random-button" :disabled="randomNoticeBusy" @click="drawRandomNumbers">抽取</button>
           </div>
-          <p v-if="randomResult" :key="randomResultKey" class="random-result">{{ randomResult }}</p>
         </div>
 
         <div class="extra-draw panel">
-          <select v-model="extraFaction" class="field faction-select" aria-label="抽将势力">
-            <option v-for="option in factionOptions" :key="option.value || 'all'" :value="option.value">
-              {{ option.label }}
+          <select v-model="extraFaction" class="field faction-select" aria-label="抽将势力" @change="clearExtraCandidates">
+            <option value="">不限势力</option>
+            <option v-for="faction in factions" :key="faction" :value="faction">
+              {{ factionName(faction) }}
             </option>
           </select>
-          <button class="warm-button draw-button" :disabled="extraBusy" @click="drawExtra">
+          <button class="warm-button draw-button" :disabled="extraBusy" @click="drawExtra()">
             {{ extraBusy ? '抽取中' : '+ 抽将' }}
           </button>
+          <div class="extra-search">
+            <input v-model.trim="extraKeyword" class="field" maxlength="50" placeholder="搜索将池武将，抽取指定武将" />
+            <div v-if="extraKeyword" class="extra-search-results">
+              <button
+                v-for="general in extraCandidates"
+                :key="general.id"
+                type="button"
+                :disabled="extraBusy"
+                @click="drawExtra(general.id)"
+              >
+                {{ general.name }}<span v-if="general.faction"> · {{ factionName(general.faction) }}</span>
+              </button>
+              <span v-if="!extraSearchLoading && !extraCandidates.length" class="muted">将池中没有匹配的武将</span>
+              <span v-if="extraSearchLoading" class="muted">搜索中…</span>
+            </div>
+          </div>
         </div>
 
         <div v-if="myExtraGenerals.length" class="my-extra-grid">
@@ -331,12 +373,22 @@
       </div>
     </van-popup>
 
+    <van-popup v-model:show="randomNoticeVisible" class="random-notice-popup" :close-on-click-overlay="true">
+      <div class="random-notice-inner">
+        <button type="button" class="random-notice-close" aria-label="关闭随机结果" @click="randomNoticeVisible = false">×</button>
+        <span>全场随机结果</span>
+        <strong>{{ room?.randomNotice?.actorUsername || '玩家' }}</strong>
+        <p>{{ room?.randomNotice?.message }}</p>
+        <small>5 秒后自动关闭</small>
+      </div>
+    </van-popup>
+
     <ImageModal v-model="modalVisible" :image="modalImage" />
   </main>
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Popup as VanPopup, showConfirmDialog, showToast } from 'vant'
 import ImageModal from '../../components/ImageModal.vue'
@@ -346,30 +398,23 @@ import {
   dissolveRoom,
   getRoom,
   markDead,
+  publishRandomNotice,
   removeExtraGeneral,
   restartRoom,
   revealExtraGeneral,
   revealGeneral,
+  searchExtraGenerals,
   updateMarker,
   updateStatus,
   updateVitals
 } from '../../api/room'
 import { useRoomSocket } from '../../composables/useWebSocket'
 import { useGameStore } from '../../store/game'
+import { getFactions } from '../../api/settings'
 import { assetUrl } from '../../utils/pathHelper'
 import hpFullIcon from '../../assets/vitals/勾玉.png'
 import hpEmptyIcon from '../../assets/vitals/勾玉空.png'
 import armorIcon from '../../assets/vitals/护甲.png'
-
-const factionOptions = [
-  { label: '不限势力', value: '' },
-  { label: '魏', value: 'WEI' },
-  { label: '蜀', value: 'SHU' },
-  { label: '吴', value: 'WU' },
-  { label: '群', value: 'QUN' },
-  { label: '晋', value: 'JIN' },
-  { label: '神', value: 'GOD' }
-]
 
 const route = useRoute()
 const router = useRouter()
@@ -380,6 +425,10 @@ const MARKER_TARGET_ALL = 'ALL_OTHERS'
 const room = computed(() => game.room)
 const holdingIdentity = ref(false)
 const extraFaction = ref('')
+const factions = ref([])
+const extraKeyword = ref('')
+const extraCandidates = ref([])
+const extraSearchLoading = ref(false)
 const extraBusy = ref(false)
 const vitalsBusy = ref(false)
 const markerBusy = ref(false)
@@ -394,9 +443,11 @@ const randomRangeStart = ref(null)
 const randomRangeEnd = ref(null)
 const randomRangeCount = ref(null)
 const randomPlayerSelectedIds = ref([])
-const randomResult = ref('')
-const randomResultKey = ref(0)
+const randomNoticeBusy = ref(false)
+const randomNoticeVisible = ref(false)
 const crownPrinceTargetId = ref(null)
+let extraSearchTimer = 0
+let randomNoticeTimer = 0
 const vitalsForm = reactive({
   currentHp: null,
   maxHp: null,
@@ -426,12 +477,36 @@ const randomExceptSelfSelected = computed(() => {
 })
 const crownPrinceTargets = computed(() => alivePlayers.value.filter((player) => !sameUserId(player.userId, room.value?.me?.userId)))
 const myExtraGenerals = computed(() => room.value?.me?.extraGenerals || [])
+const mySelectedGenerals = computed(() => [room.value?.me?.selectedGeneral, ...(room.value?.me?.secondaryGenerals || [])].filter(Boolean))
 const identityShown = computed(() => room.value?.me?.identityVisibleRule || room.value?.me?.identityLeader || holdingIdentity.value)
 const canRevealGeneral = computed(() => Boolean(room.value?.me?.selectedGeneral?.startsHidden && !room.value?.me?.generalRevealed))
 const needsVitalsSetup = computed(() => Boolean(room.value?.me?.selectedGeneral && !hasVitals(room.value.me)))
+const selectedExtraFaction = computed(() => extraFaction.value)
+const legacyFactionLabels = {
+  WEI: '魏',
+  SHU: '蜀',
+  WU: '吴',
+  QUN: '群',
+  JIN: '晋',
+  GOD: '神'
+}
 
-onMounted(loadRoom)
+onMounted(() => {
+  loadFactions()
+  loadRoom()
+})
+onBeforeUnmount(() => window.clearTimeout(randomNoticeTimer))
 watch(alivePlayers, syncRandomPlayerSelection, { immediate: true })
+watch(() => room.value?.randomNotice?.id, syncRandomNotice, { immediate: true })
+
+watch([extraKeyword, selectedExtraFaction], () => {
+  window.clearTimeout(extraSearchTimer)
+  if (!extraKeyword.value) {
+    extraCandidates.value = []
+    return
+  }
+  extraSearchTimer = window.setTimeout(fetchExtraCandidates, 180)
+})
 useRoomSocket(roomCode, loadRoom)
 
 async function loadRoom() {
@@ -443,6 +518,15 @@ async function loadRoom() {
     if (data.status === 'SELECTING') router.replace(`/mobile/room/${roomCode}/select`)
   } catch (error) {
     handleRoomLoadError(error)
+  }
+}
+
+async function loadFactions() {
+  try {
+    const values = await getFactions()
+    factions.value = Array.isArray(values) ? values : []
+  } catch {
+    factions.value = []
   }
 }
 
@@ -460,18 +544,44 @@ function releaseIdentity() {
   if (!room.value?.me?.identityVisibleRule && !room.value?.me?.identityLeader) holdingIdentity.value = false
 }
 
-async function drawExtra() {
+async function drawExtra(generalId = null) {
   if (extraBusy.value) return
+  const selectedGeneralId = Number.isSafeInteger(generalId) && generalId > 0 ? generalId : undefined
   extraBusy.value = true
   try {
-    const data = await drawExtraGeneral(roomCode, extraFaction.value)
+    const data = await drawExtraGeneral(roomCode, selectedExtraFaction.value, selectedGeneralId)
     game.setRoom(data)
-    showToast('已抽取武将')
+    if (selectedGeneralId) {
+      extraKeyword.value = ''
+      extraCandidates.value = []
+    }
+    showToast(selectedGeneralId ? '已抽取指定武将' : '已抽取武将')
   } catch (error) {
     showToast(error.message)
   } finally {
     extraBusy.value = false
   }
+}
+
+async function fetchExtraCandidates() {
+  if (!extraKeyword.value) return
+  extraSearchLoading.value = true
+  try {
+    extraCandidates.value = await searchExtraGenerals(roomCode, extraKeyword.value, selectedExtraFaction.value || undefined)
+  } catch (error) {
+    extraCandidates.value = []
+    showToast(error.message)
+  } finally {
+    extraSearchLoading.value = false
+  }
+}
+
+function clearExtraCandidates() {
+  extraCandidates.value = []
+}
+
+function factionName(value) {
+  return legacyFactionLabels[value] || value
 }
 
 async function revealExtra(index) {
@@ -732,9 +842,35 @@ function syncRandomPlayerSelection() {
   }
 }
 
-function showRandomResult(message) {
-  randomResultKey.value += 1
-  randomResult.value = message
+async function showRandomResult(message) {
+  if (randomNoticeBusy.value) return
+  randomNoticeBusy.value = true
+  try {
+    const data = await publishRandomNotice(roomCode, message)
+    game.setRoom(data)
+  } catch (error) {
+    showToast(error.message)
+  } finally {
+    randomNoticeBusy.value = false
+  }
+}
+
+function syncRandomNotice() {
+  window.clearTimeout(randomNoticeTimer)
+  const notice = room.value?.randomNotice
+  if (!notice?.id || !notice.expiresAt) {
+    randomNoticeVisible.value = false
+    return
+  }
+  const remaining = new Date(notice.expiresAt).getTime() - Date.now()
+  if (!Number.isFinite(remaining) || remaining <= 0) {
+    randomNoticeVisible.value = false
+    return
+  }
+  randomNoticeVisible.value = true
+  randomNoticeTimer = window.setTimeout(() => {
+    randomNoticeVisible.value = false
+  }, remaining)
 }
 
 async function revealMyGeneral() {
@@ -975,15 +1111,8 @@ function clamp(value, min, max) {
 
 .battle-main {
   min-width: 0;
-  border: 0;
-  padding: 0;
-  background: transparent;
   color: var(--warm-text);
   text-align: left;
-}
-
-.battle-main:disabled {
-  cursor: default;
 }
 
 .battle-name {
@@ -1005,6 +1134,29 @@ function clamp(value, min, max) {
   margin: 5px 0 0;
   color: var(--warm-muted);
   font-weight: 700;
+}
+
+.battle-general-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 5px;
+}
+
+.battle-general-button {
+  min-width: 0;
+  border: 1px solid #e2c28e;
+  border-radius: 7px;
+  padding: 4px 7px;
+  background: #fff8eb;
+  color: var(--warm-primary-strong);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.battle-general-button:disabled {
+  color: var(--warm-muted);
 }
 
 .identity-chip {
@@ -1372,6 +1524,56 @@ function clamp(value, min, max) {
   font-weight: 900;
 }
 
+.random-notice-popup {
+  width: min(320px, calc(100vw - 40px));
+  border-radius: 12px;
+}
+
+.random-notice-inner {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  padding: 24px 22px 20px;
+  text-align: center;
+}
+
+.random-notice-inner > span {
+  color: var(--warm-muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.random-notice-inner strong {
+  color: var(--warm-primary-strong);
+  font-size: 18px;
+}
+
+.random-notice-inner p {
+  margin: 0;
+  color: var(--warm-text);
+  font-size: 20px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.random-notice-inner small {
+  color: var(--warm-muted);
+}
+
+.random-notice-close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--warm-muted);
+  font-size: 24px;
+  line-height: 1;
+}
+
 .random-panel {
   grid-column: 1 / -1;
   display: grid;
@@ -1473,6 +1675,13 @@ function clamp(value, min, max) {
   margin-top: 16px;
 }
 
+.my-generals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
 .my-general {
   overflow: hidden;
   border: 1px solid var(--warm-line);
@@ -1481,6 +1690,10 @@ function clamp(value, min, max) {
   color: var(--warm-text);
   font-weight: 900;
   min-height: 104px;
+}
+
+.my-general:disabled {
+  cursor: default;
 }
 
 .my-general img {
@@ -1677,6 +1890,34 @@ function clamp(value, min, max) {
 .draw-button {
   min-height: 44px;
   padding: 0 10px;
+}
+
+.extra-search {
+  grid-column: 1 / -1;
+}
+
+.extra-search .field {
+  min-height: 42px;
+}
+
+.extra-search-results {
+  display: grid;
+  gap: 6px;
+  max-height: 190px;
+  margin-top: 8px;
+  overflow: auto;
+}
+
+.extra-search-results button {
+  min-height: 36px;
+  border: 1px solid var(--warm-line);
+  border-radius: 8px;
+  padding: 0 10px;
+  background: #fffaf2;
+  color: var(--warm-primary-strong);
+  font-size: 13px;
+  font-weight: 800;
+  text-align: left;
 }
 
 .my-extra-grid {

@@ -46,7 +46,12 @@ public class RoomController {
 
     @PostMapping("/{roomCode}/choose")
     public Result<RoomView> choose(@PathVariable String roomCode, @RequestBody RoomActionRequest request) {
-        return Result.success(gameRoomService.chooseGeneral(roomCode, request.getGeneralId(), SecurityUtil.currentUser()));
+        return Result.success(gameRoomService.chooseGeneral(roomCode, request.getGeneralId(), request.getGeneralSelectIndex(), SecurityUtil.currentUser()));
+    }
+
+    @PostMapping("/{roomCode}/swap-general")
+    public Result<RoomView> swapGeneral(@PathVariable String roomCode, @RequestBody RoomActionRequest request) {
+        return Result.success(gameRoomService.swapGeneral(roomCode, request.getGeneralId(), SecurityUtil.currentUser()));
     }
 
     @PostMapping("/{roomCode}/lock")
@@ -62,7 +67,8 @@ public class RoomController {
     @PostMapping("/{roomCode}/extra-generals/draw")
     public Result<RoomView> drawExtraGeneral(@PathVariable String roomCode, @RequestBody(required = false) RoomActionRequest request) {
         String faction = request == null ? null : request.getFaction();
-        return Result.success(gameRoomService.drawExtraGeneral(roomCode, faction, SecurityUtil.currentUser()));
+        Long generalId = request == null ? null : request.getGeneralId();
+        return Result.success(gameRoomService.drawExtraGeneral(roomCode, faction, generalId, SecurityUtil.currentUser()));
     }
 
     @PostMapping("/{roomCode}/extra-generals/{index}/reveal")
@@ -123,6 +129,11 @@ public class RoomController {
         return Result.success(gameRoomService.appointCrownPrince(roomCode, targetUserId, SecurityUtil.currentUser()));
     }
 
+    @PostMapping("/{roomCode}/random-notice")
+    public Result<RoomView> publishRandomNotice(@PathVariable String roomCode, @RequestBody RoomActionRequest request) {
+        return Result.success(gameRoomService.publishRandomNotice(roomCode, request.getRandomNotice(), SecurityUtil.currentUser()));
+    }
+
     @PostMapping("/{roomCode}/restart")
     public Result<RoomView> restart(@PathVariable String roomCode) {
         return Result.success(gameRoomService.restart(roomCode, SecurityUtil.currentUser()));
@@ -153,5 +164,14 @@ public class RoomController {
             @RequestParam(required = false) String keyword
     ) {
         return Result.success(gameRoomService.manualPickGenerals(roomCode, keyword, SecurityUtil.currentUser()));
+    }
+
+    @GetMapping("/{roomCode}/extra-general-candidates")
+    public Result<List<RoomView.GeneralCard>> extraGeneralCandidates(
+            @PathVariable String roomCode,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String faction
+    ) {
+        return Result.success(gameRoomService.extraGeneralCandidates(roomCode, keyword, faction, SecurityUtil.currentUser()));
     }
 }

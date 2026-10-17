@@ -9,6 +9,8 @@
       <router-link to="/admin/identity-modes">身份模式</router-link>
       <router-link to="/admin/generals">武将池</router-link>
       <router-link to="/admin/settings">系统设置</router-link>
+      <router-link to="/admin/data-package">数据管理</router-link>
+      <router-link to="/admin/shared-packages">共享大厅</router-link>
       <router-link to="/admin/users">玩家开户</router-link>
       <button @click="logout">退出登录</button>
     </aside>

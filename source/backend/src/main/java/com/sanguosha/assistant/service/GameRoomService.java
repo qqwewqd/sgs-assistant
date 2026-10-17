@@ -13,13 +13,15 @@ public interface GameRoomService {
 
     RoomView startGame(String roomCode, AuthUser user);
 
-    RoomView chooseGeneral(String roomCode, Long generalId, AuthUser user);
+    RoomView chooseGeneral(String roomCode, Long generalId, Integer generalSelectIndex, AuthUser user);
+
+    RoomView swapGeneral(String roomCode, Long generalId, AuthUser user);
 
     RoomView lockGeneral(String roomCode, AuthUser user);
 
     RoomView revealGeneral(String roomCode, AuthUser user);
 
-    RoomView drawExtraGeneral(String roomCode, String faction, AuthUser user);
+    RoomView drawExtraGeneral(String roomCode, String faction, Long generalId, AuthUser user);
 
     RoomView revealExtraGeneral(String roomCode, int index, AuthUser user);
 
@@ -44,6 +46,10 @@ public interface GameRoomService {
     List<RoomView.GeneralCard> safeLordGenerals(String roomCode, String keyword, AuthUser user);
 
     List<RoomView.GeneralCard> manualPickGenerals(String roomCode, String keyword, AuthUser user);
+
+    RoomView publishRandomNotice(String roomCode, String message, AuthUser user);
+
+    List<RoomView.GeneralCard> extraGeneralCandidates(String roomCode, String keyword, String faction, AuthUser user);
 
     void touch(String roomCode);
 

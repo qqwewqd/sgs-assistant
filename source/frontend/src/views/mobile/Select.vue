@@ -46,7 +46,7 @@
               class="revealed-general"
               @click="modalImage = player.selectedGeneral"
             >
-              {{ player.selectedGeneral.name }}
+              {{ player.selectedGeneral.name }}<template v-for="general in player.secondaryGenerals || []" :key="general.id"> / {{ general.name }}</template>
             </button>
             <span v-else class="muted">{{ player.locked ? '武将暗置' : '等待锁定' }}</span>
             <button
@@ -66,30 +66,50 @@
         <div class="pool-head">
           <h2 class="section-title">{{ room.me.locked ? '已锁定武将' : '我的盲选将' }}</h2>
           <span :class="['status-pill', room.me.locked ? 'green' : '']">{{ room.me.locked ? '已锁定' : '未锁定' }}</span>
+          <select v-if="room.me.generalSelectCount > 1 && !room.me.locked" v-model.number="activeSelectionIndex" class="selection-slot-select">
+            <option
+              v-for="index in room.me.generalSelectCount"
+              :key="index"
+              :value="index - 1"
+              :disabled="index - 1 > selectedGenerals.length"
+            >
+              {{ selectionSlotLabel(index - 1) }}
+            </option>
+          </select>
         </div>
-        <button
-          v-if="room.me.locked && selectedGeneral"
-          type="button"
-          class="locked-general-card panel"
-          @click="openImage(selectedGeneral)"
-        >
-          <img :src="assetUrl(selectedGeneral.imagePath)" :alt="selectedGeneral.name" />
-          <strong>{{ selectedGeneral.name }}</strong>
-        </button>
+        <div v-if="room.me.locked && selectedGeneral" class="locked-general-grid">
+          <button v-for="(general, index) in selectedGenerals" :key="general.id" type="button" class="locked-general-card panel" @click="openImage(general)">
+            <img :src="assetUrl(general.imagePath)" :alt="general.name" />
+            <strong>{{ general.name }}</strong>
+            <span v-if="room.me.generalSelectCount > 1" class="locked-general-role">{{ selectionSlotLabel(index, false) }}</span>
+          </button>
+        </div>
         <div v-else class="card-grid">
           <article
-            v-for="general in room.me.generalPool"
+            v-for="(general, index) in room.me.generalPool"
             :key="general.id"
-            :class="['general-card', selectedId === general.id && 'selected']"
+            :class="['general-card', selectedGeneralIds.includes(general.id) && 'selected']"
             @click="pick(general)"
           >
+            <button
+              v-if="room.me.canSwapGeneral"
+              type="button"
+              :class="['swap-general-button', isSwapUsed(index) && 'used']"
+              :disabled="swapBusyId === general.id || isSwapUsed(index)"
+              aria-label="换将"
+              :title="isSwapUsed(index) ? '本将框已换过' : '换将'"
+              @click.stop="swapPoolCard(general)"
+            >
+              <Check v-if="isSwapUsed(index)" :size="17" />
+              <Refresh v-else :size="17" />
+            </button>
             <button type="button" class="general-image-button" @click.stop="openImage(general)">
               <img :src="assetUrl(general.imagePath)" :alt="general.name" />
             </button>
             <div class="general-card__body">
               <strong>{{ general.name }}</strong>
               <button type="button" class="card-pick-button" @click.stop="pick(general)">
-                {{ selectedId === general.id ? '已选择' : '选择' }}
+                {{ selectedGenerals[activeSelectionIndex]?.id === general.id ? '当前将位已选' : '选择' }}
               </button>
             </div>
           </article>
@@ -97,14 +117,14 @@
       </section>
 
       <section v-if="selectedGeneral && !room?.me?.locked" class="panel selected-panel">
-        <span class="muted">已选择</span>
+        <span class="muted">{{ room.me.generalSelectCount > 1 ? `已选择 ${selectedGenerals.length} / ${room.me.generalSelectCount} 名` : '已选择' }}</span>
         <button class="selected-general" @click="openImage(selectedGeneral)">
-          {{ selectedGeneral.name }}
+          {{ selectedGeneralNames }}
         </button>
       </section>
 
       <div v-if="room?.me && !room.me.locked" class="fixed-bottom">
-        <button class="warm-button" :disabled="!selectedId || room?.me?.locked" @click="lock">
+        <button class="warm-button" :disabled="selectedGenerals.length < (room?.me?.generalSelectCount || 1) || room?.me?.locked" @click="lock">
           锁定出阵
         </button>
       </div>
@@ -189,8 +209,9 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Popup as VanPopup, showConfirmDialog, showToast } from 'vant'
+import { Check, Refresh } from '@element-plus/icons-vue'
 import ImageModal from '../../components/ImageModal.vue'
-import { chooseGeneral, dissolveRoom, getRoom, lockGeneral, manualPickGenerals, safeLordGenerals } from '../../api/room'
+import { chooseGeneral, dissolveRoom, getRoom, lockGeneral, manualPickGenerals, safeLordGenerals, swapGeneral } from '../../api/room'
 import { useRoomSocket } from '../../composables/useWebSocket'
 import { useGameStore } from '../../store/game'
 import { assetUrl } from '../../utils/pathHelper'
@@ -201,6 +222,7 @@ const game = useGameStore()
 const roomCode = route.params.roomCode
 const room = computed(() => game.room)
 const selectedId = ref(null)
+const activeSelectionIndex = ref(0)
 const holdingIdentity = ref(false)
 const lordSearchVisible = ref(false)
 const keyword = ref('')
@@ -213,6 +235,7 @@ const manualPreview = ref(null)
 const teammatePoolPlayer = ref(null)
 const modalImage = ref(null)
 const dissolving = ref(false)
+const swapBusyId = ref(null)
 let keywordTimer = 0
 let manualKeywordTimer = 0
 const modalVisible = computed({
@@ -229,6 +252,9 @@ const teammatePoolVisible = computed({
 })
 
 const selectedGeneral = computed(() => room.value?.me?.selectedGeneral || room.value?.me?.generalPool?.find((item) => item.id === selectedId.value))
+const selectedGenerals = computed(() => [room.value?.me?.selectedGeneral, ...(room.value?.me?.secondaryGenerals || [])].filter(Boolean))
+const selectedGeneralIds = computed(() => selectedGenerals.value.map((general) => general.id))
+const selectedGeneralNames = computed(() => selectedGenerals.value.map((general) => general.name).join(' / '))
 const preBattlePlayers = computed(() => room.value?.players?.filter((player) => player.userId !== room.value?.me?.userId) || [])
 const identityShown = computed(() => room.value?.me?.identityVisibleRule || room.value?.me?.identityLeader || holdingIdentity.value)
 
@@ -249,7 +275,8 @@ async function loadRoom() {
   try {
     const data = await getRoom(roomCode)
     game.setRoom(data)
-    selectedId.value = data.me?.selectedGeneral?.id || selectedId.value
+    selectedId.value = data.me?.selectedGeneral?.id || null
+    activeSelectionIndex.value = Math.min(activeSelectionIndex.value, selectedGenerals.value.length)
     if (data.status === 'WAITING') router.replace('/mobile/hall')
     if (data.status === 'PLAYING') router.replace(`/mobile/room/${roomCode}/play`)
   } catch (error) {
@@ -260,12 +287,38 @@ async function loadRoom() {
 async function pick(general) {
   if (room.value?.me?.locked) return
   try {
-    const data = await chooseGeneral(roomCode, general.id)
+    const data = await chooseGeneral(roomCode, general.id, activeSelectionIndex.value)
     game.setRoom(data)
-    selectedId.value = general.id
+    selectedId.value = data.me?.selectedGeneral?.id || null
+    activeSelectionIndex.value = Math.min(activeSelectionIndex.value, selectedGenerals.value.length - 1)
   } catch (error) {
     showToast(error.message)
   }
+}
+
+async function swapPoolCard(general) {
+  if (room.value?.me?.locked || !room.value?.me?.canSwapGeneral || swapBusyId.value) return
+  swapBusyId.value = general.id
+  try {
+    const data = await swapGeneral(roomCode, general.id)
+    game.setRoom(data)
+    selectedId.value = data.me?.selectedGeneral?.id || null
+    showToast('已换将')
+  } catch (error) {
+    showToast(error.message)
+  } finally {
+    swapBusyId.value = null
+  }
+}
+
+function isSwapUsed(index) {
+  return room.value?.me?.swappedGeneralPoolIndexes?.includes(index)
+}
+
+function selectionSlotLabel(index, includeName = true) {
+  const name = selectedGenerals.value[index]?.name
+  const prefix = `将位 ${index + 1}`
+  return includeName && name ? `${prefix}：${name}` : prefix
 }
 
 function openImage(general) {
@@ -520,6 +573,42 @@ function isRoomGone(error) {
   gap: 12px;
 }
 
+.general-card {
+  position: relative;
+}
+
+.swap-general-button {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(96, 50, 20, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 250, 242, 0.92);
+  color: var(--warm-primary-strong);
+  box-shadow: 0 6px 16px rgba(72, 39, 16, 0.18);
+  cursor: pointer;
+}
+
+.swap-general-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.swap-general-button.used {
+  background: rgba(231, 241, 224, 0.94);
+  color: var(--warm-success);
+}
+
+.swap-general-button svg {
+  width: 17px;
+  height: 17px;
+}
+
 .locked-general-card {
   display: block;
   width: 100%;
@@ -529,6 +618,12 @@ function isRoomGone(error) {
   background: #fffaf2;
   color: var(--warm-text);
   cursor: zoom-in;
+}
+
+.locked-general-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .locked-general-card img {
@@ -546,6 +641,15 @@ function isRoomGone(error) {
   color: var(--warm-primary-strong);
   font-size: 22px;
   line-height: 1.2;
+  text-align: center;
+}
+
+.locked-general-role {
+  display: block;
+  padding: 0 12px 10px;
+  color: var(--warm-muted);
+  font-size: 13px;
+  font-weight: 800;
   text-align: center;
 }
 
@@ -586,6 +690,18 @@ function isRoomGone(error) {
   border-color: var(--warm-primary);
   background: var(--warm-primary);
   color: #fffaf3;
+}
+
+.selection-slot-select {
+  min-height: 30px;
+  max-width: 170px;
+  border: 1px solid var(--warm-line);
+  border-radius: 7px;
+  padding: 0 6px;
+  background: #fffaf2;
+  color: var(--warm-primary-strong);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .selected-panel {

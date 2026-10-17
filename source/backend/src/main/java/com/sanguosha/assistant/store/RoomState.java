@@ -1,5 +1,6 @@
 package com.sanguosha.assistant.store;
 
+import com.sanguosha.assistant.vo.RoomView;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -20,6 +21,8 @@ public class RoomState {
     private String status = WAITING;
     private Long crownPrinceUserId;
     private boolean crownPrinceAppointed;
+    private List<RoomView.GeneralCard> generalReservePool = new ArrayList<>();
+    private RoomView.RandomNotice randomNotice;
     private List<PlayerState> players = new ArrayList<>();
     private Instant createdAt = Instant.now();
     private Instant updatedAt = Instant.now();

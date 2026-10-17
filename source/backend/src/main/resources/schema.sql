@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS identity_mode_rules (
     identity_name VARCHAR(20) NOT NULL,
     quantity INT NOT NULL DEFAULT 1,
     general_pool_size INT NOT NULL DEFAULT 2,
+    general_select_count INT NOT NULL DEFAULT 1,
     is_leader TINYINT(1) NOT NULL DEFAULT 0,
     identity_visible TINYINT(1) NOT NULL DEFAULT 0,
     allow_lord_general TINYINT(1) NOT NULL DEFAULT 0,
@@ -65,6 +66,12 @@ VALUES ('manual_pick_enabled', 'false');
 
 INSERT IGNORE INTO app_settings (setting_key, setting_value)
 VALUES ('crown_prince_enabled', 'false');
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value)
+VALUES ('general_swap_enabled', 'false');
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value)
+VALUES ('factions', '["WEI","SHU","WU","QUN","JIN","GOD"]');
 
 SET @add_starts_hidden_column := (
     SELECT IF(
@@ -185,6 +192,21 @@ SET @add_general_pool_size_column := (
 PREPARE add_general_pool_size_stmt FROM @add_general_pool_size_column;
 EXECUTE add_general_pool_size_stmt;
 DEALLOCATE PREPARE add_general_pool_size_stmt;
+
+SET @add_general_select_count_column := (
+    SELECT IF(
+        COUNT(*) = 0,
+        'ALTER TABLE identity_mode_rules ADD COLUMN general_select_count INT NOT NULL DEFAULT 1 AFTER general_pool_size',
+        'SELECT ''general_select_count already exists'''
+    )
+    FROM information_schema.columns
+    WHERE table_schema = DATABASE()
+      AND table_name = 'identity_mode_rules'
+      AND column_name = 'general_select_count'
+);
+PREPARE add_general_select_count_stmt FROM @add_general_select_count_column;
+EXECUTE add_general_select_count_stmt;
+DEALLOCATE PREPARE add_general_select_count_stmt;
 
 SET @drop_generals_name_unique := (
     SELECT IF(

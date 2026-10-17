@@ -5,6 +5,7 @@ import lombok.Data;
 @Data
 public class RoomActionRequest {
     private Long generalId;
+    private Integer generalSelectIndex;
     private Long targetUserId;
     private Long crownPrinceUserId;
     private String faction;
@@ -16,4 +17,5 @@ public class RoomActionRequest {
     private Integer markerCount;
     private Boolean chained;
     private Boolean turnedOver;
+    private String randomNotice;
 }

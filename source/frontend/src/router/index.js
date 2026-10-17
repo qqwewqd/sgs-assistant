@@ -12,6 +12,8 @@ const IdentityModeAdmin = () => import('../views/admin/IdentityMode.vue')
 const UserAdmin = () => import('../views/admin/User.vue')
 const RoomAdmin = () => import('../views/admin/Rooms.vue')
 const SettingsAdmin = () => import('../views/admin/Settings.vue')
+const DataPackageAdmin = () => import('../views/admin/DataPackage.vue')
+const SharedHall = () => import('../views/admin/SharedHall.vue')
 
 const router = createRouter({
   history: createWebHistory(),
@@ -41,6 +43,8 @@ const router = createRouter({
         { path: 'identity-modes', component: IdentityModeAdmin },
         { path: 'generals', component: GeneralAdmin },
         { path: 'settings', component: SettingsAdmin },
+        { path: 'data-package', component: DataPackageAdmin },
+        { path: 'shared-packages', component: SharedHall },
         { path: 'users', component: UserAdmin }
       ]
     }

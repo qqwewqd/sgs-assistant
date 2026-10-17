@@ -250,6 +250,7 @@ function routeByStatus(room, passive = false) {
   font-weight: 900;
 }
 
+
 .join-box {
   display: grid;
   grid-template-columns: 1fr auto;

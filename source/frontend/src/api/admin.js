@@ -19,3 +19,9 @@ export const dissolveRoom = (roomCode) => request.delete(`/admin/rooms/${roomCod
 
 export const getSettings = () => request.get('/admin/settings')
 export const updateSettings = (payload) => request.put('/admin/settings', payload)
+export const exportDataPackage = () => request.get('/admin/data-package/export', { responseType: 'blob' })
+export const importDataPackage = (file, allowUnverified = false) => {
+  const data = new FormData()
+  data.append('file', file)
+  return request.post('/admin/data-package/import', data, { params: { allowUnverified } })
+}

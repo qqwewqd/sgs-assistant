@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS identity_mode_rules (
     identity_name VARCHAR(20) NOT NULL,
     quantity INT NOT NULL DEFAULT 1,
     general_pool_size INT NOT NULL DEFAULT 2,
+    general_select_count INT NOT NULL DEFAULT 1,
     is_leader BOOLEAN NOT NULL DEFAULT FALSE,
     identity_visible BOOLEAN NOT NULL DEFAULT FALSE,
     allow_lord_general BOOLEAN NOT NULL DEFAULT FALSE,
@@ -63,6 +64,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_identity_mode_rules_name ON identity_mode_r
 CREATE INDEX IF NOT EXISTS idx_identity_mode_rules_mode_count ON identity_mode_rules (mode_id, player_count);
 
 ALTER TABLE identity_mode_rules ADD COLUMN IF NOT EXISTS general_pool_size INT NOT NULL DEFAULT 2;
+ALTER TABLE identity_mode_rules ADD COLUMN IF NOT EXISTS general_select_count INT NOT NULL DEFAULT 1;
 ALTER TABLE identity_mode_rules ADD COLUMN IF NOT EXISTS same_identity_general_visible BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE TABLE IF NOT EXISTS app_settings (
@@ -81,6 +83,18 @@ INSERT INTO app_settings (setting_key, setting_value)
 SELECT 'crown_prince_enabled', 'false'
 WHERE NOT EXISTS (
     SELECT 1 FROM app_settings WHERE setting_key = 'crown_prince_enabled'
+);
+
+INSERT INTO app_settings (setting_key, setting_value)
+SELECT 'general_swap_enabled', 'false'
+WHERE NOT EXISTS (
+    SELECT 1 FROM app_settings WHERE setting_key = 'general_swap_enabled'
+);
+
+INSERT INTO app_settings (setting_key, setting_value)
+SELECT 'factions', '["WEI","SHU","WU","QUN","JIN","GOD"]'
+WHERE NOT EXISTS (
+    SELECT 1 FROM app_settings WHERE setting_key = 'factions'
 );
 
 MERGE INTO identity_modes (name, enabled, builtin)

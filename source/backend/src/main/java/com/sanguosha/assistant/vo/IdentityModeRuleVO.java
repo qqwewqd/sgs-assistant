@@ -14,6 +14,7 @@ public class IdentityModeRuleVO {
     private String identityName;
     private Integer quantity;
     private Integer generalPoolSize;
+    private Integer generalSelectCount;
     private Boolean isLeader;
     private Boolean identityVisible;
     private Boolean allowLordGeneral;
@@ -29,6 +30,7 @@ public class IdentityModeRuleVO {
                 rule.getIdentityName(),
                 rule.getQuantity(),
                 rule.getGeneralPoolSize(),
+                rule.getGeneralSelectCount(),
                 rule.getIsLeader(),
                 rule.getIdentityVisible(),
                 rule.getAllowLordGeneral(),

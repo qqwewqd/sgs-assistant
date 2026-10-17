@@ -18,6 +18,8 @@ public interface GeneralService {
 
     GeneralVO updateGeneralVitals(Long id, Integer initialHp, Integer maxHp, Integer initialArmor);
 
+    GeneralVO importGeneral(String name, String faction, Boolean isLord, Boolean startsHidden, Integer initialHp, Integer maxHp, Integer initialArmor, MultipartFile image);
+
     void deleteGeneral(Long id);
 
     General requireGeneral(Long id);

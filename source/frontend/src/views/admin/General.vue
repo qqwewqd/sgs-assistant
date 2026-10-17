@@ -76,7 +76,9 @@
         </el-form-item>
         <el-form-item label="势力">
           <el-select v-model="form.faction" placeholder="不限/无" clearable>
-            <el-option v-for="option in factionOptions" :key="option.value || 'none'" :label="option.label" :value="option.value" />
+            <el-option label="不限/无" value="" />
+            <el-option v-for="faction in factions" :key="faction" :label="factionLabel(faction)" :value="faction" />
+            <el-option v-if="form.faction && !factions.includes(form.faction)" :label="`${factionLabel(form.faction)}（已删除）`" :value="form.faction" disabled />
           </el-select>
         </el-form-item>
         <el-form-item label="主公将">
@@ -141,20 +143,19 @@ import {
   ElTag,
   ElUpload
 } from 'element-plus'
-import { createGeneral, deleteGeneral, listGenerals, updateGeneral } from '../../api/admin'
+import { createGeneral, deleteGeneral, getSettings, listGenerals, updateGeneral } from '../../api/admin'
 import { assetUrl } from '../../utils/pathHelper'
 
-const factionOptions = [
-  { label: '不限/无', value: '' },
-  { label: '魏', value: 'WEI' },
-  { label: '蜀', value: 'SHU' },
-  { label: '吴', value: 'WU' },
-  { label: '群', value: 'QUN' },
-  { label: '晋', value: 'JIN' },
-  { label: '神', value: 'GOD' }
-]
-
 const rows = ref([])
+const factions = ref([])
+const legacyFactionLabels = {
+  WEI: '魏',
+  SHU: '蜀',
+  WU: '吴',
+  QUN: '群',
+  JIN: '晋',
+  GOD: '神'
+}
 const keyword = ref('')
 const lordOnly = ref(false)
 const loading = ref(false)
@@ -191,7 +192,14 @@ const IMAGE_OUTPUT_TYPES = [
 ]
 let compressionJob = 0
 
-onMounted(load)
+onMounted(async () => {
+  await Promise.all([loadFactions(), load()])
+})
+
+async function loadFactions() {
+  const settings = await getSettings()
+  factions.value = Array.isArray(settings.factions) ? settings.factions : []
+}
 
 async function load() {
   loading.value = true
@@ -236,7 +244,7 @@ function openEdit(row) {
     id: row.id,
     name: row.name,
     imageName: filenameFromPath(row.imagePath),
-    faction: normalizeFactionValue(row.faction),
+    faction: row.faction || '',
     isLord: row.isLord,
     startsHidden: row.startsHidden,
     initialHp: row.initialHp ?? null,
@@ -335,12 +343,9 @@ function filenameFromPath(path) {
   return String(path).split('/').filter(Boolean).at(-1) || ''
 }
 
-function normalizeFactionValue(value) {
-  return factionOptions.some((option) => option.value === value) ? value : ''
-}
-
 function factionLabel(value) {
-  return factionOptions.find((option) => option.value === value)?.label || '无'
+  if (!value) return '不限/无'
+  return legacyFactionLabels[value] || value
 }
 
 function emptyForm() {

@@ -24,6 +24,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -33,6 +34,8 @@ import org.springframework.stereotype.Service;
 public class GameRoomServiceImpl implements GameRoomService {
     private static final String IDENTITY_LORD = "主公";
     private static final String IDENTITY_LOYALIST = "忠臣";
+    private static final int RANDOM_NOTICE_MAX_LENGTH = 120;
+    private static final Duration RANDOM_NOTICE_TTL = Duration.ofSeconds(5);
 
     private record IdentityAssignment(
             String name,
@@ -41,6 +44,7 @@ public class GameRoomServiceImpl implements GameRoomService {
             boolean allowLordGeneral,
             boolean sameIdentityGeneralVisible,
             int generalPoolSize,
+            int generalSelectCount,
             int initialHpBonus,
             int maxHpBonus
     ) {
@@ -135,18 +139,21 @@ public class GameRoomServiceImpl implements GameRoomService {
             clearMarkers(player);
             clearCardStatus(player);
             player.setSelectedGeneral(null);
+            player.setSecondaryGenerals(new ArrayList<>());
             player.setExtraGenerals(new ArrayList<>());
+            player.setSwappedGeneralPoolIndexes(new ArrayList<>());
             int poolEnd = generalCursor + identity.generalPoolSize();
             player.setGeneralPool(new ArrayList<>(generals.subList(generalCursor, poolEnd).stream().map(this::toCard).toList()));
             generalCursor = poolEnd;
         }
+        room.setGeneralReservePool(new ArrayList<>(generals.subList(generalCursor, generals.size()).stream().map(this::toCard).toList()));
         room.setStatus(RoomState.SELECTING);
         saveRoom(room, true);
         return toView(room, user.getId());
     }
 
     @Override
-    public synchronized RoomView chooseGeneral(String roomCode, Long generalId, AuthUser user) {
+    public synchronized RoomView chooseGeneral(String roomCode, Long generalId, Integer generalSelectIndex, AuthUser user) {
         RoomState room = requireRoom(roomCode);
         PlayerState player = requirePlayer(room, user.getId());
         if (!RoomState.SELECTING.equals(room.getStatus())) {
@@ -155,7 +162,17 @@ public class GameRoomServiceImpl implements GameRoomService {
         if (player.isLocked()) {
             throw new AppException("已经锁定出阵，不能更换武将");
         }
+        int selectIndex = generalSelectIndex == null ? 0 : generalSelectIndex;
+        if (selectIndex < 0 || selectIndex >= generalSelectCount(player)) {
+            throw new AppException("选择的将位无效");
+        }
+        List<RoomView.GeneralCard> currentSelections = selectedGenerals(player);
+        if (selectIndex > currentSelections.size()) {
+            throw new AppException("请按顺序选择武将");
+        }
+        RoomView.GeneralCard previousSelected = selectIndex < currentSelections.size() ? copyCard(currentSelections.get(selectIndex)) : null;
         RoomView.GeneralCard selected = findInPool(player.getGeneralPool(), generalId);
+        boolean selectedFromOwnPool = selected != null;
         if (selected == null && canUseLordGeneral(player)) {
             General general = generalService.requireGeneral(generalId);
             if (!Boolean.TRUE.equals(general.getIsLord())) {
@@ -178,9 +195,58 @@ public class GameRoomServiceImpl implements GameRoomService {
         if (selected == null) {
             throw new AppException("只能从自己的 6 张盲选将中选择");
         }
-        player.setSelectedGeneral(selected);
-        player.setGeneralRevealed(false);
-        applyConfiguredVitals(player, selected);
+        if (containsSelectedGeneral(player, selected.getId(), selectIndex)) {
+            throw new AppException("不能重复选择同一名武将");
+        }
+        if (!sameGeneral(previousSelected, selected) && previousSelected != null && !containsGeneral(player.getGeneralPool(), previousSelected.getId())) {
+            insertIntoReservePoolRandomly(room, previousSelected);
+        }
+        if (!selectedFromOwnPool) {
+            removeFromReservePool(room, selected.getId());
+        }
+        setSelectedGeneral(player, selectIndex, selected);
+        if (selectIndex == 0) {
+            player.setSelectedGeneral(selected);
+            player.setGeneralRevealed(false);
+            applyConfiguredVitals(player, selected);
+        }
+        saveRoom(room, true);
+        return toView(room, user.getId());
+    }
+
+    @Override
+    public synchronized RoomView swapGeneral(String roomCode, Long generalId, AuthUser user) {
+        RoomState room = requireRoom(roomCode);
+        PlayerState player = requirePlayer(room, user.getId());
+        if (!RoomState.SELECTING.equals(room.getStatus())) {
+            throw new AppException("当前不是选将阶段");
+        }
+        if (player.isLocked()) {
+            throw new AppException("已经锁定出阵，不能换将");
+        }
+        if (!appSettingService.isGeneralSwapEnabled()) {
+            throw new AppException("换将功能未开启");
+        }
+        if (generalId == null || player.getGeneralPool() == null) {
+            throw new AppException(ResultCode.VALIDATE_FAILED);
+        }
+        int targetIndex = findPoolIndex(player.getGeneralPool(), generalId);
+        if (targetIndex < 0) {
+            throw new AppException("只能替换自己盲选池中的武将");
+        }
+        if (swappedPoolIndexes(player).contains(targetIndex)) {
+            throw new AppException("这个将框本局已经换过一次");
+        }
+        RoomView.GeneralCard replacement = drawFromReservePool(room, null);
+        RoomView.GeneralCard removed = player.getGeneralPool().set(targetIndex, copyCard(replacement));
+        swappedPoolIndexes(player).add(targetIndex);
+        insertIntoReservePoolRandomly(room, removed);
+        if (sameGeneral(player.getSelectedGeneral(), removed)) {
+            player.setSelectedGeneral(copyCard(replacement));
+            player.setGeneralRevealed(false);
+            applyConfiguredVitals(player, replacement);
+        }
+        replaceSecondaryGeneral(player, removed, replacement);
         saveRoom(room, true);
         return toView(room, user.getId());
     }
@@ -194,6 +260,9 @@ public class GameRoomServiceImpl implements GameRoomService {
         }
         if (player.getSelectedGeneral() == null) {
             throw new AppException("请先选择出阵武将");
+        }
+        if (selectedGenerals(player).size() < generalSelectCount(player)) {
+            throw new AppException("请先选择全部 " + generalSelectCount(player) + " 名出阵武将");
         }
         applyConfiguredVitals(player, player.getSelectedGeneral());
         player.setLocked(true);
@@ -221,28 +290,42 @@ public class GameRoomServiceImpl implements GameRoomService {
     }
 
     @Override
-    public synchronized RoomView drawExtraGeneral(String roomCode, String faction, AuthUser user) {
+    public synchronized RoomView drawExtraGeneral(String roomCode, String faction, Long generalId, AuthUser user) {
         RoomState room = requireRoom(roomCode);
         PlayerState player = requirePlayer(room, user.getId());
         if (!RoomState.PLAYING.equals(room.getStatus())) {
             throw new AppException("当前不是对局阶段");
         }
         String normalizedFaction = normalizeFaction(faction);
-        Set<Long> usedIds = activeGeneralIds(room);
-        List<General> candidates = generalService.allGenerals().stream()
-                .filter(general -> normalizedFaction == null || normalizedFaction.equals(normalizeFaction(general.getFaction())))
-                .filter(general -> !usedIds.contains(general.getId()))
-                .toList();
-        if (candidates.isEmpty()) {
-            throw new AppException("当前条件下没有可抽取的武将");
-        }
-        General drawn = candidates.get(random.nextInt(candidates.size()));
+        RoomView.GeneralCard drawn = generalId == null
+                ? drawFromReservePool(room, normalizedFaction)
+                : drawSpecificFromReservePool(room, generalId);
         if (player.getExtraGenerals() == null) {
             player.setExtraGenerals(new ArrayList<>());
         }
         player.getExtraGenerals().add(toExtraCard(drawn, false));
         saveRoom(room, true);
         return toView(room, user.getId());
+    }
+
+    @Override
+    public synchronized List<RoomView.GeneralCard> extraGeneralCandidates(String roomCode, String keyword, String faction, AuthUser user) {
+        RoomState room = requireRoom(roomCode);
+        requirePlayer(room, user.getId());
+        if (!RoomState.PLAYING.equals(room.getStatus())) {
+            throw new AppException("当前不是对局阶段");
+        }
+        String normalizedKeyword = normalizeSearchKeyword(keyword);
+        String normalizedFaction = normalizeFaction(faction);
+        ensureReservePool(room);
+        Set<Long> occupiedIds = occupiedGeneralIds(room);
+        return room.getGeneralReservePool().stream()
+                .filter(card -> card != null && card.getId() != null && !occupiedIds.contains(card.getId()))
+                .filter(card -> normalizedFaction == null || normalizedFaction.equals(normalizeFaction(card.getFaction())))
+                .filter(card -> normalizedKeyword == null || card.getName().toLowerCase(Locale.ROOT).contains(normalizedKeyword))
+                .limit(50)
+                .map(this::copyCard)
+                .toList();
     }
 
     @Override
@@ -266,7 +349,8 @@ public class GameRoomServiceImpl implements GameRoomService {
             throw new AppException("当前不是对局阶段");
         }
         requireExtraGeneral(player, index);
-        player.getExtraGenerals().remove(index);
+        RoomView.ExtraGeneralCard removed = player.getExtraGenerals().remove(index);
+        insertIntoReservePoolRandomly(room, toCard(removed));
         saveRoom(room, true);
         return toView(room, user.getId());
     }
@@ -405,11 +489,15 @@ public class GameRoomServiceImpl implements GameRoomService {
             clearMarkers(player);
             clearCardStatus(player);
             player.setSelectedGeneral(null);
+            player.setSecondaryGenerals(new ArrayList<>());
             player.setExtraGenerals(new ArrayList<>());
             player.setGeneralPool(new ArrayList<>());
+            player.setSwappedGeneralPoolIndexes(new ArrayList<>());
         }
         room.setCrownPrinceUserId(null);
         room.setCrownPrinceAppointed(false);
+        room.setGeneralReservePool(new ArrayList<>());
+        room.setRandomNotice(null);
         room.setStatus(RoomState.WAITING);
         saveRoom(room, true);
         return toView(room, user.getId());
@@ -443,7 +531,8 @@ public class GameRoomServiceImpl implements GameRoomService {
     public synchronized void dissolve(String roomCode, AuthUser user) {
         RoomState room = requireRoom(roomCode);
         ensureOwner(room, user);
-        if (!roomStore.delete(roomCode)) {
+        boolean deleted = roomStore.delete(roomCode);
+        if (!Boolean.TRUE.equals(deleted)) {
             throw new AppException(ResultCode.ROOM_NOT_FOUND);
         }
         roomSessionManager.broadcastRoomUpdated(roomCode);
@@ -477,6 +566,23 @@ public class GameRoomServiceImpl implements GameRoomService {
                 .limit(50)
                 .map(this::toCard)
                 .toList();
+    }
+
+    @Override
+    public synchronized RoomView publishRandomNotice(String roomCode, String message, AuthUser user) {
+        RoomState room = requireRoom(roomCode);
+        requirePlayer(room, user.getId());
+        if (!RoomState.PLAYING.equals(room.getStatus())) {
+            throw new AppException("当前不是对局阶段");
+        }
+        RoomView.RandomNotice notice = new RoomView.RandomNotice();
+        notice.setId(UUID.randomUUID().toString());
+        notice.setActorUsername(user.getUsername());
+        notice.setMessage(normalizeRandomNotice(message));
+        notice.setExpiresAt(Instant.now().plus(RANDOM_NOTICE_TTL));
+        room.setRandomNotice(notice);
+        saveRoom(room, true);
+        return toView(room, user.getId());
     }
 
     @Override
@@ -584,6 +690,7 @@ public class GameRoomServiceImpl implements GameRoomService {
                         Boolean.TRUE.equals(rule.getAllowLordGeneral()),
                         Boolean.TRUE.equals(rule.getSameIdentityGeneralVisible()),
                         generalPoolSize(rule.getGeneralPoolSize()),
+                        generalSelectCount(rule),
                         valueOrZero(rule.getInitialHpBonus()),
                         valueOrZero(rule.getMaxHpBonus())
                 ));
@@ -596,12 +703,23 @@ public class GameRoomServiceImpl implements GameRoomService {
         return value == null || value < 1 ? 2 : value;
     }
 
+    private int generalSelectCount(IdentityModeRule rule) {
+        return rule.getGeneralSelectCount() == null || rule.getGeneralSelectCount() < 1
+                ? 1
+                : rule.getGeneralSelectCount();
+    }
+
+    private int generalSelectCount(PlayerState player) {
+        return player == null || player.getGeneralSelectCount() < 1 ? 1 : player.getGeneralSelectCount();
+    }
+
     private void applyIdentity(PlayerState player, IdentityAssignment identity) {
         player.setIdentity(identity.name());
         player.setIdentityLeader(identity.leader());
         player.setIdentityVisibleRule(identity.visible());
         player.setAllowLordGeneral(identity.allowLordGeneral());
         player.setSameIdentityGeneralVisible(identity.sameIdentityGeneralVisible());
+        player.setGeneralSelectCount(identity.generalSelectCount());
         player.setInitialHpBonus(identity.initialHpBonus());
         player.setMaxHpBonus(identity.maxHpBonus());
     }
@@ -612,8 +730,64 @@ public class GameRoomServiceImpl implements GameRoomService {
         player.setIdentityVisibleRule(false);
         player.setAllowLordGeneral(false);
         player.setSameIdentityGeneralVisible(false);
+        player.setGeneralSelectCount(1);
         player.setInitialHpBonus(0);
         player.setMaxHpBonus(0);
+    }
+
+    private List<RoomView.GeneralCard> secondaryGenerals(PlayerState player) {
+        if (player.getSecondaryGenerals() == null) {
+            player.setSecondaryGenerals(new ArrayList<>());
+        }
+        return player.getSecondaryGenerals();
+    }
+
+    private List<RoomView.GeneralCard> selectedGenerals(PlayerState player) {
+        List<RoomView.GeneralCard> selected = new ArrayList<>();
+        if (player.getSelectedGeneral() != null) {
+            selected.add(player.getSelectedGeneral());
+        }
+        selected.addAll(secondaryGenerals(player));
+        return selected;
+    }
+
+    private boolean containsSelectedGeneral(PlayerState player, Long generalId, int exceptIndex) {
+        List<RoomView.GeneralCard> selected = selectedGenerals(player);
+        for (int index = 0; index < selected.size(); index++) {
+            if (index != exceptIndex && sameGeneral(selected.get(index), newCardWithId(generalId))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private RoomView.GeneralCard newCardWithId(Long id) {
+        RoomView.GeneralCard card = new RoomView.GeneralCard();
+        card.setId(id);
+        return card;
+    }
+
+    private void setSelectedGeneral(PlayerState player, int index, RoomView.GeneralCard card) {
+        if (index == 0) {
+            player.setSelectedGeneral(copyCard(card));
+            return;
+        }
+        List<RoomView.GeneralCard> secondary = secondaryGenerals(player);
+        int secondaryIndex = index - 1;
+        if (secondaryIndex == secondary.size()) {
+            secondary.add(copyCard(card));
+        } else {
+            secondary.set(secondaryIndex, copyCard(card));
+        }
+    }
+
+    private void replaceSecondaryGeneral(PlayerState player, RoomView.GeneralCard previous, RoomView.GeneralCard replacement) {
+        List<RoomView.GeneralCard> secondary = secondaryGenerals(player);
+        for (int index = 0; index < secondary.size(); index++) {
+            if (sameGeneral(secondary.get(index), previous)) {
+                secondary.set(index, copyCard(replacement));
+            }
+        }
     }
 
     private void applyConfiguredVitals(PlayerState player, RoomView.GeneralCard selected) {
@@ -660,6 +834,14 @@ public class GameRoomServiceImpl implements GameRoomService {
                 && !player.isLocked()
                 && !isLeaderIdentity(player)
                 && appSettingService.isManualPickEnabled();
+    }
+
+    private boolean canSwapGeneral(RoomState room, PlayerState player) {
+        return room != null
+                && RoomState.SELECTING.equals(room.getStatus())
+                && player != null
+                && !player.isLocked()
+                && appSettingService.isGeneralSwapEnabled();
     }
 
     private boolean canAppointCrownPrince(RoomState room, PlayerState player) {
@@ -884,11 +1066,47 @@ public class GameRoomServiceImpl implements GameRoomService {
         card.setName(general.getName());
         card.setImagePath(general.getImagePath());
         card.setFaction(general.getFaction());
+        card.setIsLord(general.getIsLord());
+        card.setStartsHidden(general.getStartsHidden());
         card.setInitialHp(general.getInitialHp());
         card.setMaxHp(general.getMaxHp());
         card.setInitialArmor(general.getInitialArmor());
         card.setMaxArmor(general.getMaxArmor());
         card.setRevealed(revealed);
+        return card;
+    }
+
+    private RoomView.ExtraGeneralCard toExtraCard(RoomView.GeneralCard source, boolean revealed) {
+        RoomView.ExtraGeneralCard card = new RoomView.ExtraGeneralCard();
+        card.setId(source.getId());
+        card.setName(source.getName());
+        card.setImagePath(source.getImagePath());
+        card.setFaction(source.getFaction());
+        card.setIsLord(source.getIsLord());
+        card.setStartsHidden(source.getStartsHidden());
+        card.setInitialHp(source.getInitialHp());
+        card.setMaxHp(source.getMaxHp());
+        card.setInitialArmor(source.getInitialArmor());
+        card.setMaxArmor(source.getMaxArmor());
+        card.setRevealed(revealed);
+        return card;
+    }
+
+    private RoomView.GeneralCard toCard(RoomView.ExtraGeneralCard source) {
+        if (source == null || source.getId() == null) {
+            return null;
+        }
+        RoomView.GeneralCard card = new RoomView.GeneralCard();
+        card.setId(source.getId());
+        card.setName(source.getName());
+        card.setImagePath(source.getImagePath());
+        card.setFaction(source.getFaction());
+        card.setIsLord(source.getIsLord());
+        card.setStartsHidden(source.getStartsHidden());
+        card.setInitialHp(source.getInitialHp());
+        card.setMaxHp(source.getMaxHp());
+        card.setInitialArmor(source.getInitialArmor());
+        card.setMaxArmor(source.getMaxArmor());
         return card;
     }
 
@@ -919,6 +1137,8 @@ public class GameRoomServiceImpl implements GameRoomService {
         card.setName(visible ? source.getName() : null);
         card.setImagePath(visible ? source.getImagePath() : null);
         card.setFaction(visible ? source.getFaction() : null);
+        card.setIsLord(visible ? source.getIsLord() : null);
+        card.setStartsHidden(visible ? source.getStartsHidden() : null);
         card.setInitialHp(visible ? source.getInitialHp() : null);
         card.setMaxHp(visible ? source.getMaxHp() : null);
         card.setInitialArmor(visible ? source.getInitialArmor() : null);
@@ -945,6 +1165,137 @@ public class GameRoomServiceImpl implements GameRoomService {
         return pool.stream().filter(card -> card.getId().equals(generalId)).findFirst().map(this::copyCard).orElse(null);
     }
 
+    private int findPoolIndex(List<RoomView.GeneralCard> pool, Long generalId) {
+        if (generalId == null || pool == null) {
+            return -1;
+        }
+        for (int index = 0; index < pool.size(); index++) {
+            RoomView.GeneralCard card = pool.get(index);
+            if (card != null && generalId.equals(card.getId())) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private boolean containsGeneral(List<RoomView.GeneralCard> pool, Long generalId) {
+        return findPoolIndex(pool, generalId) >= 0;
+    }
+
+    private boolean sameGeneral(RoomView.GeneralCard left, RoomView.GeneralCard right) {
+        return left != null && right != null && left.getId() != null && left.getId().equals(right.getId());
+    }
+
+    private List<Integer> swappedPoolIndexes(PlayerState player) {
+        if (player.getSwappedGeneralPoolIndexes() == null) {
+            player.setSwappedGeneralPoolIndexes(new ArrayList<>());
+        }
+        return player.getSwappedGeneralPoolIndexes();
+    }
+
+    private void ensureReservePool(RoomState room) {
+        if (room.getGeneralReservePool() == null) {
+            room.setGeneralReservePool(buildReservePool(room));
+        } else if (room.getGeneralReservePool().isEmpty() && !RoomState.WAITING.equals(room.getStatus())) {
+            List<RoomView.GeneralCard> rebuilt = buildReservePool(room);
+            if (!rebuilt.isEmpty()) {
+                room.setGeneralReservePool(rebuilt);
+            }
+        }
+    }
+
+    private List<RoomView.GeneralCard> buildReservePool(RoomState room) {
+        Set<Long> occupiedIds = occupiedGeneralIds(room);
+        List<RoomView.GeneralCard> reservePool = new ArrayList<>(generalService.allGenerals().stream()
+                .filter(general -> !occupiedIds.contains(general.getId()))
+                .map(this::toCard)
+                .toList());
+        Collections.shuffle(reservePool, random);
+        return reservePool;
+    }
+
+    private RoomView.GeneralCard drawFromReservePool(RoomState room, String normalizedFaction) {
+        ensureReservePool(room);
+        Set<Long> occupiedIds = occupiedGeneralIds(room);
+        List<Integer> candidateIndexes = new ArrayList<>();
+        List<RoomView.GeneralCard> reservePool = room.getGeneralReservePool();
+        for (int index = 0; index < reservePool.size(); index++) {
+            RoomView.GeneralCard card = reservePool.get(index);
+            if (card == null || card.getId() == null || occupiedIds.contains(card.getId())) {
+                continue;
+            }
+            if (normalizedFaction == null || normalizedFaction.equals(normalizeFaction(card.getFaction()))) {
+                candidateIndexes.add(index);
+            }
+        }
+        if (candidateIndexes.isEmpty()) {
+            throw new AppException("当前条件下没有可抽取的武将");
+        }
+        int reserveIndex = candidateIndexes.get(random.nextInt(candidateIndexes.size()));
+        return copyCard(reservePool.remove(reserveIndex));
+    }
+
+    private RoomView.GeneralCard drawSpecificFromReservePool(RoomState room, Long generalId) {
+        if (generalId == null) {
+            throw new AppException(ResultCode.VALIDATE_FAILED);
+        }
+        ensureReservePool(room);
+        Set<Long> occupiedIds = occupiedGeneralIds(room);
+        List<RoomView.GeneralCard> reservePool = room.getGeneralReservePool();
+        for (int index = 0; index < reservePool.size(); index++) {
+            RoomView.GeneralCard card = reservePool.get(index);
+            if (card != null && generalId.equals(card.getId()) && !occupiedIds.contains(generalId)) {
+                return copyCard(reservePool.remove(index));
+            }
+        }
+        throw new AppException("该武将当前不能抽取");
+    }
+
+    private RoomView.GeneralCard removeFromReservePool(RoomState room, Long generalId) {
+        ensureReservePool(room);
+        List<RoomView.GeneralCard> reservePool = room.getGeneralReservePool();
+        for (int index = 0; index < reservePool.size(); index++) {
+            RoomView.GeneralCard card = reservePool.get(index);
+            if (card != null && generalId != null && generalId.equals(card.getId())) {
+                return copyCard(reservePool.remove(index));
+            }
+        }
+        return null;
+    }
+
+    private void insertIntoReservePoolRandomly(RoomState room, RoomView.GeneralCard card) {
+        if (card == null || card.getId() == null) {
+            return;
+        }
+        ensureReservePool(room);
+        if (containsGeneral(room.getGeneralReservePool(), card.getId())) {
+            return;
+        }
+        int insertIndex = random.nextInt(room.getGeneralReservePool().size() + 1);
+        room.getGeneralReservePool().add(insertIndex, copyCard(card));
+    }
+
+    private Set<Long> occupiedGeneralIds(RoomState room) {
+        Set<Long> ids = new HashSet<>();
+        for (PlayerState player : room.getPlayers()) {
+            for (RoomView.GeneralCard card : player.getGeneralPool()) {
+                if (card.getId() != null) {
+                    ids.add(card.getId());
+                }
+            }
+            if (player.getSelectedGeneral() != null && player.getSelectedGeneral().getId() != null) {
+                ids.add(player.getSelectedGeneral().getId());
+            }
+            for (RoomView.GeneralCard card : secondaryGenerals(player)) {
+                if (card != null && card.getId() != null) {
+                    ids.add(card.getId());
+                }
+            }
+            addExtraGeneralIds(ids, player);
+        }
+        return ids;
+    }
+
     private Set<Long> usedGeneralIds(RoomState room, Long exceptUserId) {
         Set<Long> ids = new HashSet<>();
         for (PlayerState player : room.getPlayers()) {
@@ -957,6 +1308,11 @@ public class GameRoomServiceImpl implements GameRoomService {
             if (player.getSelectedGeneral() != null) {
                 ids.add(player.getSelectedGeneral().getId());
             }
+            for (RoomView.GeneralCard card : secondaryGenerals(player)) {
+                if (card != null && card.getId() != null) {
+                    ids.add(card.getId());
+                }
+            }
             addExtraGeneralIds(ids, player);
         }
         return ids;
@@ -967,6 +1323,11 @@ public class GameRoomServiceImpl implements GameRoomService {
         for (PlayerState player : room.getPlayers()) {
             if (player.getSelectedGeneral() != null) {
                 ids.add(player.getSelectedGeneral().getId());
+            }
+            for (RoomView.GeneralCard card : secondaryGenerals(player)) {
+                if (card != null && card.getId() != null) {
+                    ids.add(card.getId());
+                }
             }
             addExtraGeneralIds(ids, player);
         }
@@ -1025,6 +1386,31 @@ public class GameRoomServiceImpl implements GameRoomService {
         return ids;
     }
 
+    private String normalizeRandomNotice(String message) {
+        if (message == null || message.trim().isBlank()) {
+            throw new AppException(ResultCode.VALIDATE_FAILED);
+        }
+        String normalized = message.trim();
+        if (normalized.length() > RANDOM_NOTICE_MAX_LENGTH) {
+            throw new AppException("随机结果内容过长");
+        }
+        return normalized;
+    }
+
+    private RoomView.RandomNotice activeRandomNotice(RoomState room) {
+        RoomView.RandomNotice notice = room.getRandomNotice();
+        if (notice == null || notice.getExpiresAt() == null || !notice.getExpiresAt().isAfter(Instant.now())) {
+            room.setRandomNotice(null);
+            return null;
+        }
+        RoomView.RandomNotice copy = new RoomView.RandomNotice();
+        copy.setId(notice.getId());
+        copy.setActorUsername(notice.getActorUsername());
+        copy.setMessage(notice.getMessage());
+        copy.setExpiresAt(notice.getExpiresAt());
+        return copy;
+    }
+
     private RoomView toView(RoomState room, Long viewerId) {
         PlayerState viewer = findPlayer(room, viewerId);
         RoomView view = new RoomView();
@@ -1040,10 +1426,12 @@ public class GameRoomServiceImpl implements GameRoomService {
                 && allPlayersOnline(room));
         view.setCanRestart(viewer != null && viewer.isOwner());
         view.setManualPickEnabled(appSettingService.isManualPickEnabled());
+        view.setGeneralSwapEnabled(appSettingService.isGeneralSwapEnabled());
         boolean crownPrinceEnabled = appSettingService.isCrownPrinceEnabled();
         view.setCrownPrinceEnabled(crownPrinceEnabled);
         view.setCrownPrinceUserId(crownPrinceEnabled ? room.getCrownPrinceUserId() : null);
         view.setUpdatedAt(room.getUpdatedAt());
+        view.setRandomNotice(activeRandomNotice(room));
 
         for (PlayerState player : room.getPlayers()) {
             RoomView.PlayerView playerView = new RoomView.PlayerView();
@@ -1059,6 +1447,7 @@ public class GameRoomServiceImpl implements GameRoomService {
             playerView.setTurnedOver(player.isTurnedOver());
             playerView.setIdentityLeader(isLeaderIdentity(player));
             playerView.setAllowLordGeneral(canUseLordGeneral(player));
+            playerView.setGeneralSelectCount(generalSelectCount(player));
             playerView.setCurrentHp(player.getCurrentHp());
             playerView.setMaxHp(player.getMaxHp());
             playerView.setCurrentArmor(player.getCurrentArmor());
@@ -1077,6 +1466,7 @@ public class GameRoomServiceImpl implements GameRoomService {
             playerView.setIdentity(identityVisible ? player.getIdentity() : null);
             playerView.setGeneralVisible(generalVisible);
             playerView.setSelectedGeneral(generalVisible ? copyCard(player.getSelectedGeneral()) : null);
+            playerView.setSecondaryGenerals(generalVisible ? secondaryGenerals(player).stream().map(this::copyCard).toList() : new ArrayList<>());
             if (sameIdentityGeneralVisible && player.getGeneralPool() != null) {
                 playerView.setGeneralPool(player.getGeneralPool().stream().map(this::copyCard).toList());
             }
@@ -1105,6 +1495,8 @@ public class GameRoomServiceImpl implements GameRoomService {
             me.setIdentityVisibleRule(isIdentityPublic(viewer));
             me.setAllowLordGeneral(canUseLordGeneral(viewer));
             me.setCanManualPick(canManualPick(room, viewer));
+            me.setCanSwapGeneral(canSwapGeneral(room, viewer));
+            me.setGeneralSelectCount(generalSelectCount(viewer));
             me.setCanAppointCrownPrince(canAppointCrownPrince(room, viewer));
             me.setInitialHpBonus(initialHpBonus(viewer));
             me.setMaxHpBonus(maxHpBonus(viewer));
@@ -1117,11 +1509,13 @@ public class GameRoomServiceImpl implements GameRoomService {
             }
             me.setMarkers(viewer.getMarkers().stream().map(this::copyMarker).toList());
             me.setSelectedGeneral(copyCard(viewer.getSelectedGeneral()));
+            me.setSecondaryGenerals(secondaryGenerals(viewer).stream().map(this::copyCard).toList());
             if (viewer.getExtraGenerals() == null) {
                 viewer.setExtraGenerals(new ArrayList<>());
             }
             me.setExtraGenerals(viewer.getExtraGenerals().stream().map(card -> copyExtraCard(card, true)).toList());
             me.setGeneralPool(viewer.getGeneralPool().stream().map(this::copyCard).toList());
+            me.setSwappedGeneralPoolIndexes(new ArrayList<>(swappedPoolIndexes(viewer)));
             view.setMe(me);
         }
         return view;

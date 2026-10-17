@@ -2,6 +2,7 @@ package com.sanguosha.assistant.controller;
 
 import com.sanguosha.assistant.service.AdminRoomService;
 import com.sanguosha.assistant.service.AppSettingService;
+import com.sanguosha.assistant.service.DataPackageService;
 import com.sanguosha.assistant.service.GeneralService;
 import com.sanguosha.assistant.service.IdentityModeService;
 import com.sanguosha.assistant.service.UserService;
@@ -11,6 +12,7 @@ import com.sanguosha.assistant.vo.AppException;
 import com.sanguosha.assistant.vo.AppSettingsRequest;
 import com.sanguosha.assistant.vo.AppSettingsVO;
 import com.sanguosha.assistant.vo.CreateUserRequest;
+import com.sanguosha.assistant.vo.DataPackageImportResult;
 import com.sanguosha.assistant.vo.GeneralVO;
 import com.sanguosha.assistant.vo.IdentityModeRequest;
 import com.sanguosha.assistant.vo.IdentityModeVO;
@@ -18,6 +20,12 @@ import com.sanguosha.assistant.vo.PageVO;
 import com.sanguosha.assistant.vo.Result;
 import com.sanguosha.assistant.vo.UserVO;
 import jakarta.validation.Valid;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
@@ -44,6 +52,7 @@ public class AdminController {
     private final AdminRoomService adminRoomService;
     private final IdentityModeService identityModeService;
     private final AppSettingService appSettingService;
+    private final DataPackageService dataPackageService;
 
     @GetMapping("/users")
     public Result<PageVO<UserVO>> users(
@@ -159,5 +168,33 @@ public class AdminController {
     @PutMapping("/settings")
     public Result<AppSettingsVO> updateSettings(@RequestBody AppSettingsRequest request) {
         return Result.success(appSettingService.updateSettings(request));
+    }
+
+    @GetMapping("/data-package/export")
+    public void exportDataPackage(HttpServletResponse response) throws IOException {
+        Path packageFile = Files.createTempFile("sgs-data-package-", ".zip");
+        try {
+            try (OutputStream output = Files.newOutputStream(packageFile)) {
+                dataPackageService.exportPackage(output);
+            }
+
+            response.setContentType("application/zip");
+            response.setContentLengthLong(Files.size(packageFile));
+            response.setHeader("Content-Disposition", "attachment; filename=sgs-data-package.zip");
+            try (InputStream input = Files.newInputStream(packageFile);
+                 OutputStream output = response.getOutputStream()) {
+                input.transferTo(output);
+            }
+        } finally {
+            Files.deleteIfExists(packageFile);
+        }
+    }
+
+    @PostMapping(value = "/data-package/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public Result<DataPackageImportResult> importDataPackage(
+            @RequestPart("file") MultipartFile file,
+            @RequestParam(defaultValue = "false") boolean allowUnverified
+    ) {
+        return Result.success(dataPackageService.importPackage(file, allowUnverified));
     }
 }

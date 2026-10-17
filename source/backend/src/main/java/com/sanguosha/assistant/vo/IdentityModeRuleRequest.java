@@ -8,6 +8,7 @@ public class IdentityModeRuleRequest {
     private String identityName;
     private Integer quantity;
     private Integer generalPoolSize;
+    private Integer generalSelectCount;
     private Boolean isLeader;
     private Boolean identityVisible;
     private Boolean allowLordGeneral;

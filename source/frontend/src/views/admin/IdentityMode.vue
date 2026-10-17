@@ -80,6 +80,11 @@
             <el-input-number v-model="row.generalPoolSize" class="compact-number" :min="1" :max="20" :controls="false" size="small" />
           </template>
         </el-table-column>
+        <el-table-column label="出阵将数" width="92">
+          <template #default="{ row }">
+            <el-input-number v-model="row.generalSelectCount" class="compact-number" :min="1" :max="Number(row.generalPoolSize || 1)" :controls="false" size="small" />
+          </template>
+        </el-table-column>
         <el-table-column label="选将明置" width="88" align="center">
           <template #default="{ row }">
             <el-switch v-model="row.isLeader" />
@@ -234,6 +239,7 @@ function addRule() {
     identityName: '',
     quantity: 1,
     generalPoolSize: 2,
+    generalSelectCount: 1,
     isLeader: false,
     identityVisible: false,
     sameIdentityGeneralVisible: false,
@@ -285,6 +291,7 @@ function copyRule(rule) {
     identityName: rule.identityName,
     quantity: rule.quantity,
     generalPoolSize: Number(rule.generalPoolSize || 2),
+    generalSelectCount: Number(rule.generalSelectCount || 1),
     isLeader: Boolean(rule.isLeader),
     identityVisible: Boolean(rule.identityVisible),
     sameIdentityGeneralVisible: Boolean(rule.sameIdentityGeneralVisible),

@@ -200,6 +200,10 @@ public class IdentityModeServiceImpl implements IdentityModeService {
         int quantity = normalizeRange(rule.getQuantity(), 1, MAX_PLAYER_COUNT, "身份数量");
         String identityName = normalizeIdentityName(rule.getIdentityName());
         int generalPoolSize = normalizeRange(rule.getGeneralPoolSize() == null ? DEFAULT_GENERAL_POOL_SIZE : rule.getGeneralPoolSize(), 1, MAX_GENERAL_POOL_SIZE, "发将数");
+        int generalSelectCount = rule.getGeneralSelectCount() == null ? 1 : rule.getGeneralSelectCount();
+        if (generalSelectCount < 1 || generalSelectCount > generalPoolSize) {
+            throw new AppException("出阵将数需在 1 到发将数之间");
+        }
         int initialHpBonus = normalizeRange(rule.getInitialHpBonus() == null ? 0 : rule.getInitialHpBonus(), -MAX_RULE_BONUS, MAX_RULE_BONUS, "初始血加成");
         int maxHpBonus = normalizeRange(rule.getMaxHpBonus() == null ? 0 : rule.getMaxHpBonus(), -MAX_RULE_BONUS, MAX_RULE_BONUS, "上限加成");
         IdentityModeRuleRequest copy = new IdentityModeRuleRequest();
@@ -207,6 +211,7 @@ public class IdentityModeServiceImpl implements IdentityModeService {
         copy.setIdentityName(identityName);
         copy.setQuantity(quantity);
         copy.setGeneralPoolSize(generalPoolSize);
+        copy.setGeneralSelectCount(generalSelectCount);
         copy.setIsLeader(Boolean.TRUE.equals(rule.getIsLeader()));
         copy.setIdentityVisible(Boolean.TRUE.equals(rule.getIdentityVisible()));
         copy.setAllowLordGeneral(Boolean.TRUE.equals(rule.getAllowLordGeneral()));
@@ -244,6 +249,7 @@ public class IdentityModeServiceImpl implements IdentityModeService {
             entity.setIdentityName(rule.getIdentityName());
             entity.setQuantity(rule.getQuantity());
             entity.setGeneralPoolSize(rule.getGeneralPoolSize());
+            entity.setGeneralSelectCount(rule.getGeneralSelectCount());
             entity.setIsLeader(Boolean.TRUE.equals(rule.getIsLeader()));
             entity.setIdentityVisible(Boolean.TRUE.equals(rule.getIdentityVisible()));
             entity.setAllowLordGeneral(Boolean.TRUE.equals(rule.getAllowLordGeneral()));

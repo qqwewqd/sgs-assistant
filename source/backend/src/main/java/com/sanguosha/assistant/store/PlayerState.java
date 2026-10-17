@@ -24,6 +24,7 @@ public class PlayerState {
     private boolean identityVisibleRule;
     private boolean allowLordGeneral;
     private boolean sameIdentityGeneralVisible;
+    private int generalSelectCount = 1;
     private Integer initialHpBonus = 0;
     private Integer maxHpBonus = 0;
     private Integer currentHp;
@@ -31,8 +32,10 @@ public class PlayerState {
     private Integer currentArmor;
     private Integer maxArmor;
     private RoomView.GeneralCard selectedGeneral;
+    private List<RoomView.GeneralCard> secondaryGenerals = new ArrayList<>();
     private List<RoomView.MarkerView> markers = new ArrayList<>();
     private List<RoomView.ExtraGeneralCard> extraGenerals = new ArrayList<>();
     private List<RoomView.GeneralCard> generalPool = new ArrayList<>();
+    private List<Integer> swappedGeneralPoolIndexes = new ArrayList<>();
     private Instant joinedAt = Instant.now();
 }

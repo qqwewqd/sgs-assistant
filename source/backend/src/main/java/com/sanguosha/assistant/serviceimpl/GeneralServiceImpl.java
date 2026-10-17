@@ -33,6 +33,7 @@ public class GeneralServiceImpl implements GeneralService {
     private static final int MAX_PAGE_SIZE = 100;
     private static final String UPLOAD_PREFIX = "/upload/";
     private static final String GENERAL_UPLOAD_PREFIX = "/upload/general/";
+    private static final long MAX_IMAGE_BYTES = 1_024L * 1_024L;
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of("jpg", "jpeg", "png", "webp");
 
     private final GeneralMapper generalMapper;
@@ -149,6 +150,23 @@ public class GeneralServiceImpl implements GeneralService {
 
     @Override
     @Transactional
+    public GeneralVO importGeneral(String name, String faction, Boolean isLord, Boolean startsHidden, Integer initialHp, Integer maxHp, Integer initialArmor, MultipartFile image) {
+        String normalizedName = normalizeName(name);
+        String initialHpText = initialHp == null ? "" : String.valueOf(initialHp);
+        String maxHpText = maxHp == null ? "" : String.valueOf(maxHp);
+        String initialArmorText = initialArmor == null ? "" : String.valueOf(initialArmor);
+        General existing = generalMapper.selectOne(new LambdaQueryWrapper<General>()
+                .eq(General::getName, normalizedName)
+                .orderByAsc(General::getId)
+                .last("LIMIT 1"));
+        if (existing == null) {
+            return createGeneral(normalizedName, faction, isLord, startsHidden, initialHpText, maxHpText, initialArmorText, "", image.getOriginalFilename(), image);
+        }
+        return updateGeneral(existing.getId(), normalizedName, faction, isLord, startsHidden, initialHpText, maxHpText, initialArmorText, "", image.getOriginalFilename(), image);
+    }
+
+    @Override
+    @Transactional
     public void deleteGeneral(Long id) {
         General general = requireGeneral(id);
         generalMapper.deleteById(id);
@@ -248,6 +266,9 @@ public class GeneralServiceImpl implements GeneralService {
     }
 
     private String storeImage(MultipartFile image, String imageName, String replaceableImagePath) {
+        if (image.getSize() > MAX_IMAGE_BYTES) {
+            throw new AppException("图片大小不能超过 1MB");
+        }
         String extension = extensionOf(image.getOriginalFilename());
         if (!ALLOWED_EXTENSIONS.contains(extension)) {
             throw new AppException("图片仅支持 jpg、jpeg、png、webp");
