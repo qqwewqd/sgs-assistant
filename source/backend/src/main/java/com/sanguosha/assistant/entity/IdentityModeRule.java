@@ -17,6 +17,7 @@ public class IdentityModeRule {
     private Integer quantity;
     private Integer generalPoolSize;
     private Integer generalSelectCount;
+    private String allowedFactions;
     private Boolean isLeader;
     private Boolean identityVisible;
     private Boolean allowLordGeneral;

@@ -85,6 +85,20 @@
             <el-input-number v-model="row.generalSelectCount" class="compact-number" :min="1" :max="Number(row.generalPoolSize || 1)" :controls="false" size="small" />
           </template>
         </el-table-column>
+        <el-table-column label="选将势力" min-width="180">
+          <template #default="{ row }">
+            <el-select v-model="row.allowedFactions" multiple clearable collapse-tags placeholder="不限" size="small">
+              <el-option v-for="faction in factions" :key="faction" :label="factionLabel(faction)" :value="faction" />
+              <el-option
+                v-for="faction in missingFactions(row.allowedFactions)"
+                :key="`missing-${faction}`"
+                :label="`${factionLabel(faction)}（已删除）`"
+                :value="faction"
+                disabled
+              />
+            </el-select>
+          </template>
+        </el-table-column>
         <el-table-column label="选将明置" width="88" align="center">
           <template #default="{ row }">
             <el-switch v-model="row.isLeader" />
@@ -149,8 +163,18 @@ import {
   ElTag
 } from 'element-plus'
 import { createIdentityMode, deleteIdentityMode, listIdentityModes, updateIdentityMode } from '../../api/admin'
+import { getFactions } from '../../api/settings'
 
 const rows = ref([])
+const factions = ref([])
+const legacyFactionLabels = {
+  WEI: '魏',
+  SHU: '蜀',
+  WU: '吴',
+  QUN: '群',
+  JIN: '晋',
+  GOD: '神'
+}
 const loading = ref(false)
 const saving = ref(false)
 const dialogVisible = ref(false)
@@ -163,7 +187,18 @@ const selectedRules = computed(() => form.rules
   .sort((left, right) => left.sortOrder - right.sortOrder))
 const selectedRuleQuantity = computed(() => selectedRules.value.reduce((total, rule) => total + Number(rule.quantity || 0), 0))
 
-onMounted(load)
+onMounted(async () => {
+  await Promise.all([load(), loadFactions()])
+})
+
+async function loadFactions() {
+  try {
+    const values = await getFactions()
+    factions.value = Array.isArray(values) ? values : []
+  } catch {
+    factions.value = []
+  }
+}
 
 async function load() {
   loading.value = true
@@ -240,6 +275,7 @@ function addRule() {
     quantity: 1,
     generalPoolSize: 2,
     generalSelectCount: 1,
+    allowedFactions: [],
     isLeader: false,
     identityVisible: false,
     sameIdentityGeneralVisible: false,
@@ -292,6 +328,7 @@ function copyRule(rule) {
     quantity: rule.quantity,
     generalPoolSize: Number(rule.generalPoolSize || 2),
     generalSelectCount: Number(rule.generalSelectCount || 1),
+    allowedFactions: Array.isArray(rule.allowedFactions) ? [...rule.allowedFactions] : [],
     isLeader: Boolean(rule.isLeader),
     identityVisible: Boolean(rule.identityVisible),
     sameIdentityGeneralVisible: Boolean(rule.sameIdentityGeneralVisible),
@@ -300,6 +337,14 @@ function copyRule(rule) {
     maxHpBonus: Number(rule.maxHpBonus || 0),
     sortOrder: Number(rule.sortOrder || 0)
   }
+}
+
+function missingFactions(values) {
+  return (Array.isArray(values) ? values : []).filter((faction) => !factions.value.includes(faction))
+}
+
+function factionLabel(faction) {
+  return legacyFactionLabels[faction] || faction
 }
 
 function emptyForm() {

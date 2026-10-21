@@ -25,6 +25,7 @@ public class PlayerState {
     private boolean allowLordGeneral;
     private boolean sameIdentityGeneralVisible;
     private int generalSelectCount = 1;
+    private List<String> allowedFactions = new ArrayList<>();
     private Integer initialHpBonus = 0;
     private Integer maxHpBonus = 0;
     private Integer currentHp;

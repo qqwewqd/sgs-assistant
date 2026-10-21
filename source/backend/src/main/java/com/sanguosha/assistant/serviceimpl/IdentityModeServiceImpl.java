@@ -1,6 +1,7 @@
 package com.sanguosha.assistant.serviceimpl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sanguosha.assistant.entity.IdentityMode;
 import com.sanguosha.assistant.entity.IdentityModeRule;
 import com.sanguosha.assistant.mapper.IdentityModeMapper;
@@ -18,6 +19,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -36,6 +38,7 @@ public class IdentityModeServiceImpl implements IdentityModeService {
 
     private final IdentityModeMapper identityModeMapper;
     private final IdentityModeRuleMapper identityModeRuleMapper;
+    private final ObjectMapper objectMapper;
 
     @Override
     public List<IdentityModeVO> listModes(boolean admin) {
@@ -206,12 +209,14 @@ public class IdentityModeServiceImpl implements IdentityModeService {
         }
         int initialHpBonus = normalizeRange(rule.getInitialHpBonus() == null ? 0 : rule.getInitialHpBonus(), -MAX_RULE_BONUS, MAX_RULE_BONUS, "初始血加成");
         int maxHpBonus = normalizeRange(rule.getMaxHpBonus() == null ? 0 : rule.getMaxHpBonus(), -MAX_RULE_BONUS, MAX_RULE_BONUS, "上限加成");
+        List<String> allowedFactions = normalizeAllowedFactions(rule.getAllowedFactions());
         IdentityModeRuleRequest copy = new IdentityModeRuleRequest();
         copy.setPlayerCount(playerCount);
         copy.setIdentityName(identityName);
         copy.setQuantity(quantity);
         copy.setGeneralPoolSize(generalPoolSize);
         copy.setGeneralSelectCount(generalSelectCount);
+        copy.setAllowedFactions(allowedFactions);
         copy.setIsLeader(Boolean.TRUE.equals(rule.getIsLeader()));
         copy.setIdentityVisible(Boolean.TRUE.equals(rule.getIdentityVisible()));
         copy.setAllowLordGeneral(Boolean.TRUE.equals(rule.getAllowLordGeneral()));
@@ -220,6 +225,27 @@ public class IdentityModeServiceImpl implements IdentityModeService {
         copy.setMaxHpBonus(maxHpBonus);
         copy.setSortOrder(rule.getSortOrder() == null ? 0 : rule.getSortOrder());
         return copy;
+    }
+
+    private List<String> normalizeAllowedFactions(List<String> factions) {
+        if (factions == null || factions.isEmpty()) {
+            return List.of();
+        }
+        if (factions.size() > 10) {
+            throw new AppException("每条身份规则最多限制 10 个势力");
+        }
+        LinkedHashSet<String> normalized = new LinkedHashSet<>();
+        for (String faction : factions) {
+            if (faction == null || faction.trim().isBlank()) {
+                throw new AppException("选将势力不能为空");
+            }
+            String value = faction.trim().toUpperCase(Locale.ROOT);
+            if (value.length() > 20) {
+                throw new AppException("选将势力最多 20 个字符");
+            }
+            normalized.add(value);
+        }
+        return new ArrayList<>(normalized);
     }
 
     private String normalizeIdentityName(String identityName) {
@@ -250,6 +276,7 @@ public class IdentityModeServiceImpl implements IdentityModeService {
             entity.setQuantity(rule.getQuantity());
             entity.setGeneralPoolSize(rule.getGeneralPoolSize());
             entity.setGeneralSelectCount(rule.getGeneralSelectCount());
+            entity.setAllowedFactions(writeAllowedFactions(rule.getAllowedFactions()));
             entity.setIsLeader(Boolean.TRUE.equals(rule.getIsLeader()));
             entity.setIdentityVisible(Boolean.TRUE.equals(rule.getIdentityVisible()));
             entity.setAllowLordGeneral(Boolean.TRUE.equals(rule.getAllowLordGeneral()));
@@ -266,5 +293,16 @@ public class IdentityModeServiceImpl implements IdentityModeService {
 
     private int valueOrZero(Integer value) {
         return value == null ? 0 : value;
+    }
+
+    private String writeAllowedFactions(List<String> factions) {
+        if (factions == null || factions.isEmpty()) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(factions);
+        } catch (Exception exception) {
+            throw new AppException("保存选将势力限制失败");
+        }
     }
 }

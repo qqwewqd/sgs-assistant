@@ -1,6 +1,7 @@
 package com.sanguosha.assistant.vo;
 
 import lombok.Data;
+import java.util.List;
 
 @Data
 public class IdentityModeRuleRequest {
@@ -9,6 +10,7 @@ public class IdentityModeRuleRequest {
     private Integer quantity;
     private Integer generalPoolSize;
     private Integer generalSelectCount;
+    private List<String> allowedFactions;
     private Boolean isLeader;
     private Boolean identityVisible;
     private Boolean allowLordGeneral;

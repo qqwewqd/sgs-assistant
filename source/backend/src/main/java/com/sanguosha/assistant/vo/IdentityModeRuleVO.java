@@ -1,6 +1,9 @@
 package com.sanguosha.assistant.vo;
 
 import com.sanguosha.assistant.entity.IdentityModeRule;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -15,6 +18,7 @@ public class IdentityModeRuleVO {
     private Integer quantity;
     private Integer generalPoolSize;
     private Integer generalSelectCount;
+    private List<String> allowedFactions;
     private Boolean isLeader;
     private Boolean identityVisible;
     private Boolean allowLordGeneral;
@@ -31,6 +35,7 @@ public class IdentityModeRuleVO {
                 rule.getQuantity(),
                 rule.getGeneralPoolSize(),
                 rule.getGeneralSelectCount(),
+                allowedFactions(rule.getAllowedFactions()),
                 rule.getIsLeader(),
                 rule.getIdentityVisible(),
                 rule.getAllowLordGeneral(),
@@ -39,5 +44,16 @@ public class IdentityModeRuleVO {
                 rule.getMaxHpBonus(),
                 rule.getSortOrder()
         );
+    }
+
+    private static List<String> allowedFactions(String value) {
+        if (value == null || value.isBlank()) {
+            return List.of();
+        }
+        try {
+            return new ObjectMapper().readValue(value, new TypeReference<List<String>>() { });
+        } catch (Exception ignored) {
+            return List.of();
+        }
     }
 }

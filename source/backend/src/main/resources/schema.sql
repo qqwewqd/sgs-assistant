@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS identity_mode_rules (
     quantity INT NOT NULL DEFAULT 1,
     general_pool_size INT NOT NULL DEFAULT 2,
     general_select_count INT NOT NULL DEFAULT 1,
+    allowed_factions VARCHAR(255) NULL,
     is_leader TINYINT(1) NOT NULL DEFAULT 0,
     identity_visible TINYINT(1) NOT NULL DEFAULT 0,
     allow_lord_general TINYINT(1) NOT NULL DEFAULT 0,
@@ -207,6 +208,21 @@ SET @add_general_select_count_column := (
 PREPARE add_general_select_count_stmt FROM @add_general_select_count_column;
 EXECUTE add_general_select_count_stmt;
 DEALLOCATE PREPARE add_general_select_count_stmt;
+
+SET @add_allowed_factions_column := (
+    SELECT IF(
+        COUNT(*) = 0,
+        'ALTER TABLE identity_mode_rules ADD COLUMN allowed_factions VARCHAR(255) NULL AFTER general_select_count',
+        'SELECT ''allowed_factions already exists'''
+    )
+    FROM information_schema.columns
+    WHERE table_schema = DATABASE()
+      AND table_name = 'identity_mode_rules'
+      AND column_name = 'allowed_factions'
+);
+PREPARE add_allowed_factions_stmt FROM @add_allowed_factions_column;
+EXECUTE add_allowed_factions_stmt;
+DEALLOCATE PREPARE add_allowed_factions_stmt;
 
 SET @drop_generals_name_unique := (
     SELECT IF(

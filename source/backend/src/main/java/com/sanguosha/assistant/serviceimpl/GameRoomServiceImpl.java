@@ -15,10 +15,13 @@ import com.sanguosha.assistant.vo.AppException;
 import com.sanguosha.assistant.vo.ResultCode;
 import com.sanguosha.assistant.vo.RoomView;
 import com.sanguosha.assistant.websocket.RoomSessionManager;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
@@ -45,6 +48,7 @@ public class GameRoomServiceImpl implements GameRoomService {
             boolean sameIdentityGeneralVisible,
             int generalPoolSize,
             int generalSelectCount,
+            Set<String> allowedFactions,
             int initialHpBonus,
             int maxHpBonus
     ) {
@@ -55,6 +59,7 @@ public class GameRoomServiceImpl implements GameRoomService {
     private final IdentityModeService identityModeService;
     private final AppSettingService appSettingService;
     private final RoomSessionManager roomSessionManager;
+    private final ObjectMapper objectMapper;
     private final SecureRandom random = new SecureRandom();
 
     @Value("${sgs.room.ttl-hours}")
@@ -119,13 +124,8 @@ public class GameRoomServiceImpl implements GameRoomService {
 
         List<IdentityAssignment> identities = new ArrayList<>(identityAssignments(room, playerCount));
         Collections.shuffle(identities, random);
-        int requiredGeneralCount = identities.stream().mapToInt(IdentityAssignment::generalPoolSize).sum();
         List<General> generals = new ArrayList<>(generalService.allGenerals());
-        if (generals.size() < requiredGeneralCount) {
-            throw new AppException("武将数量不足，需要至少 " + requiredGeneralCount + " 张");
-        }
         Collections.shuffle(generals, random);
-        int generalCursor = 0;
         room.setCrownPrinceUserId(null);
         room.setCrownPrinceAppointed(false);
         for (int i = 0; i < playerCount; i++) {
@@ -142,11 +142,32 @@ public class GameRoomServiceImpl implements GameRoomService {
             player.setSecondaryGenerals(new ArrayList<>());
             player.setExtraGenerals(new ArrayList<>());
             player.setSwappedGeneralPoolIndexes(new ArrayList<>());
-            int poolEnd = generalCursor + identity.generalPoolSize();
-            player.setGeneralPool(new ArrayList<>(generals.subList(generalCursor, poolEnd).stream().map(this::toCard).toList()));
-            generalCursor = poolEnd;
         }
-        room.setGeneralReservePool(new ArrayList<>(generals.subList(generalCursor, generals.size()).stream().map(this::toCard).toList()));
+        List<General> remainingGenerals = new ArrayList<>(generals);
+        List<Integer> playerIndexes = new ArrayList<>();
+        for (int index = 0; index < playerCount; index++) {
+            playerIndexes.add(index);
+        }
+        while (!playerIndexes.isEmpty()) {
+            int playerIndex = playerIndexes.stream()
+                    .min(Comparator.comparingInt(index -> (int) remainingGenerals.stream()
+                            .filter(general -> isFactionAllowed(identities.get(index).allowedFactions(), general.getFaction()))
+                            .count()))
+                    .orElseThrow();
+            playerIndexes.remove(Integer.valueOf(playerIndex));
+            IdentityAssignment identity = identities.get(playerIndex);
+            List<General> candidates = remainingGenerals.stream()
+                    .filter(general -> isFactionAllowed(identity.allowedFactions(), general.getFaction()))
+                    .toList();
+            if (candidates.size() < identity.generalPoolSize()) {
+                String limitation = identity.allowedFactions().isEmpty() ? "" : "（限 " + String.join("、", identity.allowedFactions()) + "）";
+                throw new AppException(identity.name() + "的可选武将不足" + limitation + "，需要 " + identity.generalPoolSize() + " 张");
+            }
+            List<General> dealt = new ArrayList<>(candidates.subList(0, identity.generalPoolSize()));
+            remainingGenerals.removeAll(dealt);
+            room.getPlayers().get(playerIndex).setGeneralPool(dealt.stream().map(this::toCard).collect(java.util.stream.Collectors.toCollection(ArrayList::new)));
+        }
+        room.setGeneralReservePool(remainingGenerals.stream().map(this::toCard).collect(java.util.stream.Collectors.toCollection(ArrayList::new)));
         room.setStatus(RoomState.SELECTING);
         saveRoom(room, true);
         return toView(room, user.getId());
@@ -194,6 +215,9 @@ public class GameRoomServiceImpl implements GameRoomService {
         }
         if (selected == null) {
             throw new AppException("只能从自己的 6 张盲选将中选择");
+        }
+        if (!isFactionAllowed(player.getAllowedFactions(), selected.getFaction())) {
+            throw new AppException("当前身份不能选择该势力的武将");
         }
         if (containsSelectedGeneral(player, selected.getId(), selectIndex)) {
             throw new AppException("不能重复选择同一名武将");
@@ -265,6 +289,7 @@ public class GameRoomServiceImpl implements GameRoomService {
             throw new AppException("请先选择全部 " + generalSelectCount(player) + " 名出阵武将");
         }
         applyConfiguredVitals(player, player.getSelectedGeneral());
+        recycleUnselectedGeneralPool(room, player);
         player.setLocked(true);
         player.setGeneralRevealed(!startsHidden(player.getSelectedGeneral()));
         if (room.getPlayers().stream().allMatch(PlayerState::isLocked)) {
@@ -550,6 +575,7 @@ public class GameRoomServiceImpl implements GameRoomService {
         return generalService.listLordCards(keyword).stream()
                 .filter(card -> !dealtGeneralIds.contains(card.getId()))
                 .filter(card -> !usedByOthers.contains(card.getId()))
+                .filter(card -> isFactionAllowed(player.getAllowedFactions(), card.getFaction()))
                 .toList();
     }
 
@@ -562,6 +588,7 @@ public class GameRoomServiceImpl implements GameRoomService {
         Set<Long> unavailableIds = manualPickUnavailableIds(room, player.getUserId());
         return generalService.allGenerals().stream()
                 .filter(general -> !unavailableIds.contains(general.getId()))
+                .filter(general -> isFactionAllowed(player.getAllowedFactions(), general.getFaction()))
                 .filter(general -> normalizedKeyword == null || general.getName().toLowerCase(Locale.ROOT).contains(normalizedKeyword))
                 .limit(50)
                 .map(this::toCard)
@@ -691,6 +718,7 @@ public class GameRoomServiceImpl implements GameRoomService {
                         Boolean.TRUE.equals(rule.getSameIdentityGeneralVisible()),
                         generalPoolSize(rule.getGeneralPoolSize()),
                         generalSelectCount(rule),
+                        readAllowedFactions(rule.getAllowedFactions()),
                         valueOrZero(rule.getInitialHpBonus()),
                         valueOrZero(rule.getMaxHpBonus())
                 ));
@@ -713,6 +741,35 @@ public class GameRoomServiceImpl implements GameRoomService {
         return player == null || player.getGeneralSelectCount() < 1 ? 1 : player.getGeneralSelectCount();
     }
 
+    private Set<String> readAllowedFactions(String value) {
+        if (value == null || value.isBlank()) {
+            return Set.of();
+        }
+        try {
+            List<String> factions = objectMapper.readValue(value, new TypeReference<List<String>>() { });
+            Set<String> normalized = new HashSet<>();
+            for (String faction : factions) {
+                String normalizedFaction = normalizeFaction(faction);
+                if (normalizedFaction != null) {
+                    normalized.add(normalizedFaction);
+                }
+            }
+            return normalized;
+        } catch (Exception ignored) {
+            return Set.of();
+        }
+    }
+
+    private boolean isFactionAllowed(Set<String> allowedFactions, String faction) {
+        return allowedFactions == null || allowedFactions.isEmpty()
+                || allowedFactions.contains(normalizeFaction(faction));
+    }
+
+    private boolean isFactionAllowed(List<String> allowedFactions, String faction) {
+        return allowedFactions == null || allowedFactions.isEmpty()
+                || allowedFactions.contains(normalizeFaction(faction));
+    }
+
     private void applyIdentity(PlayerState player, IdentityAssignment identity) {
         player.setIdentity(identity.name());
         player.setIdentityLeader(identity.leader());
@@ -720,6 +777,7 @@ public class GameRoomServiceImpl implements GameRoomService {
         player.setAllowLordGeneral(identity.allowLordGeneral());
         player.setSameIdentityGeneralVisible(identity.sameIdentityGeneralVisible());
         player.setGeneralSelectCount(identity.generalSelectCount());
+        player.setAllowedFactions(new ArrayList<>(identity.allowedFactions()));
         player.setInitialHpBonus(identity.initialHpBonus());
         player.setMaxHpBonus(identity.maxHpBonus());
     }
@@ -731,8 +789,27 @@ public class GameRoomServiceImpl implements GameRoomService {
         player.setAllowLordGeneral(false);
         player.setSameIdentityGeneralVisible(false);
         player.setGeneralSelectCount(1);
+        player.setAllowedFactions(new ArrayList<>());
         player.setInitialHpBonus(0);
         player.setMaxHpBonus(0);
+    }
+
+    private void recycleUnselectedGeneralPool(RoomState room, PlayerState player) {
+        Set<Long> selectedIds = new HashSet<>();
+        if (player.getSelectedGeneral() != null && player.getSelectedGeneral().getId() != null) {
+            selectedIds.add(player.getSelectedGeneral().getId());
+        }
+        for (RoomView.GeneralCard card : secondaryGenerals(player)) {
+            if (card != null && card.getId() != null) {
+                selectedIds.add(card.getId());
+            }
+        }
+        for (RoomView.GeneralCard card : new ArrayList<>(player.getGeneralPool())) {
+            if (card != null && card.getId() != null && !selectedIds.contains(card.getId())) {
+                insertIntoReservePoolRandomly(room, card);
+            }
+        }
+        player.setGeneralPool(new ArrayList<>());
     }
 
     private List<RoomView.GeneralCard> secondaryGenerals(PlayerState player) {
