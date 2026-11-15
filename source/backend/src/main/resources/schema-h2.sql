@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS identity_mode_rules (
     quantity INT NOT NULL DEFAULT 1,
     general_pool_size INT NOT NULL DEFAULT 2,
     general_select_count INT NOT NULL DEFAULT 1,
+    allowed_factions VARCHAR(255),
     is_leader BOOLEAN NOT NULL DEFAULT FALSE,
     identity_visible BOOLEAN NOT NULL DEFAULT FALSE,
     allow_lord_general BOOLEAN NOT NULL DEFAULT FALSE,
@@ -65,6 +66,7 @@ CREATE INDEX IF NOT EXISTS idx_identity_mode_rules_mode_count ON identity_mode_r
 
 ALTER TABLE identity_mode_rules ADD COLUMN IF NOT EXISTS general_pool_size INT NOT NULL DEFAULT 2;
 ALTER TABLE identity_mode_rules ADD COLUMN IF NOT EXISTS general_select_count INT NOT NULL DEFAULT 1;
+ALTER TABLE identity_mode_rules ADD COLUMN IF NOT EXISTS allowed_factions VARCHAR(255);
 ALTER TABLE identity_mode_rules ADD COLUMN IF NOT EXISTS same_identity_general_visible BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE TABLE IF NOT EXISTS app_settings (
